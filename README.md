@@ -23,7 +23,22 @@ A HIPAA-compliant healthcare management platform built with Next.js, Express, an
 - 🔐 HIPAA-compliant authentication and authorization
 - 🌐 Internationalization support (English, French)
 - 🎨 Modern, accessible UI with Tailwind CSS
+- 🌙 Dark mode support with persistent theme preference
 - 🔄 Real-time data synchronization with React Query
+
+## Dark Mode
+
+Health Watchers ships with a full dark theme across every page — dashboards, patient cards,
+payment tables, CDS panels, encounter forms, the portal subsection, and charts
+(`VitalSignsChart`, `PaymentAnalyticsCharts`).
+
+Toggle the theme from the header using the sun/moon button (`ThemeToggle`). The choice is
+persisted in `localStorage` and re-applied on load by `ThemeSync`, so your preference survives
+reloads and new sessions. If no preference is stored, the app follows your OS setting.
+
+![Health Watchers dashboard in dark mode](docs/assets/dark-mode-dashboard.png)
+
+*Dashboard in dark mode — charts, tables, and cards all use `dark:` Tailwind variants.*
 
 ## Tech Stack
 
