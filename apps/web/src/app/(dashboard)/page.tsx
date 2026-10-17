@@ -1,7 +1,7 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslations, useFormatter } from 'next-intl';
 import Link from 'next/link';
 import { PageWrapper, PageHeader, CardSkeleton, Badge } from '@/components/ui';
@@ -11,6 +11,7 @@ import { AppointmentWidget } from '@/components/dashboard/AppointmentWidget';
 import { QuickActionsWidget } from '@/components/dashboard/QuickActionsWidget';
 import { fetchWithAuth } from '@/lib/auth';
 import { API_URL } from '@/lib/api';
+import { LazyRealtimeProvider, useRealtime } from '@/components/realtime';
 
 const API = `${API_URL}/api/v1`;
 
@@ -66,9 +67,51 @@ async function fetchHighRiskPatients(): Promise<HighRiskPatient[]> {
   );
 }
 
+// ── Realtime helpers ──────────────────────────────────────────────────────────
+
+type RealtimeEvent = {
+  type?: string;
+  event?: string;
+  room?: string;
+  clinicId?: string;
+  data?: Record<string, any>;
+  payload?: Record<string, any>;
+};
+
+function eventName(evt: RealtimeEvent): string {
+  return String(evt.type ?? evt.event ?? '');
+}
+
+function eventData(evt: RealtimeEvent): Record<string, any> {
+  return (evt.data ?? evt.payload ?? {}) as Record<string, any>;
+}
+
 // ── Sub-components ────────────────────────────────────────────────────────────
 
 const REFRESH_OPTIONS = [0, 30_000, 60_000, 300_000];
+
+function ConnectionStatus({ connected }: { connected: boolean }) {
+  const t = useTranslations('dashboard.realtime');
+  return (
+    <span
+      role="status"
+      aria-live="polite"
+      data-testid="realtime-status"
+      data-connected={connected ? 'true' : 'false'}
+      className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium ${
+        connected
+          ? 'border-green-200 bg-green-50 text-green-700'
+          : 'border-neutral-200 bg-neutral-50 text-neutral-500'
+      }`}
+    >
+      <span
+        aria-hidden="true"
+        className={`h-2 w-2 rounded-full ${connected ? 'animate-pulse bg-green-500' : 'bg-neutral-400'}`}
+      />
+      {connected ? t('live') : t('polling')}
+    </span>
+  );
+}
 
 function KpiSkeletons() {
   const t = useTranslations('dashboard');
@@ -161,25 +204,128 @@ function PopulationWidget({ data }: { data: DashboardData['patientPopulation'] }
 // ── Main component ────────────────────────────────────────────────────────────
 
 export default function DashboardPage() {
+  return (
+    <LazyRealtimeProvider>
+      <DashboardContent />
+    </LazyRealtimeProvider>
+  );
+}
+
+function DashboardContent() {
   const t = useTranslations('dashboard');
   const tStatus = useTranslations('status');
   const format = useFormatter();
+  const queryClient = useQueryClient();
   const [refreshInterval, setRefreshInterval] = useState(30_000);
   const [lastRefreshed, setLastRefreshed] = useState(new Date());
+
+  const { connected, subscribe, joinRoom } = useRealtime();
+
+  // When the socket is live we rely on push updates; otherwise fall back to polling.
+  const pollingInterval = connected ? false : refreshInterval || false;
 
   const { data, isLoading, isError, refetch } = useQuery<DashboardData>({
     queryKey: ['dashboard'],
     queryFn: fetchDashboard,
     staleTime: refreshInterval || 30_000,
-    refetchInterval: refreshInterval || false,
+    refetchInterval: pollingInterval,
   });
 
   const { data: highRiskPatients = [] } = useQuery<HighRiskPatient[]>({
     queryKey: ['high-risk-patients'],
     queryFn: fetchHighRiskPatients,
     staleTime: 60_000,
-    refetchInterval: refreshInterval ? refreshInterval * 2 : false,
+    refetchInterval: connected ? false : refreshInterval ? refreshInterval * 2 : false,
   });
+
+  // Join the current clinic's realtime room.
+  const clinicId = useMemo(() => {
+    if (typeof window === 'undefined') return undefined;
+    return (
+      data?.stats && (data as any).clinicId
+        ? String((data as any).clinicId)
+        : (window.localStorage.getItem('clinicId') ?? undefined)
+    );
+  }, [data]);
+
+  useEffect(() => {
+    if (!connected || !clinicId) return;
+    joinRoom?.(`clinic:${clinicId}`);
+  }, [connected, clinicId, joinRoom]);
+
+  // Subscribe to live events and patch the React Query cache in place.
+  useEffect(() => {
+    if (!connected || !subscribe) return;
+
+    const patchDashboard = (updater: (prev: DashboardData) => DashboardData) => {
+      queryClient.setQueryData<DashboardData>(['dashboard'], (prev) =>
+        prev ? updater(prev) : prev
+      );
+    };
+
+    const unsubscribers: Array<() => void> = [];
+
+    // New patient registration
+    unsubscribers.push(
+      subscribe('patient.created', (evt: RealtimeEvent) => {
+        const patient = eventData(evt);
+        patchDashboard((prev) => ({
+          ...prev,
+          stats: {
+            ...prev.stats,
+            totalPatients: prev.stats.totalPatients + 1,
+            newPatientsToday: prev.stats.newPatientsToday + 1,
+          },
+          patientPopulation: {
+            ...prev.patientPopulation,
+            total: prev.patientPopulation.total + 1,
+            newToday: prev.patientPopulation.newToday + 1,
+          },
+          recentPatients: [patient, ...prev.recentPatients].slice(0, 10),
+        }));
+      })
+    );
+
+    // Appointment status change
+    unsubscribers.push(
+      subscribe('appointment.updated', (evt: RealtimeEvent) => {
+        const appt = eventData(evt);
+        if (!appt?._id) return;
+        patchDashboard((prev) => ({
+          ...prev,
+          upcomingAppointments: prev.upcomingAppointments.map((a) =>
+            a._id === appt._id ? { ...a, ...appt } : a
+          ),
+        }));
+      })
+    );
+
+    // Payment confirmation
+    unsubscribers.push(
+      subscribe('payment.confirmed', (evt: RealtimeEvent) => {
+        const payment = eventData(evt);
+        patchDashboard((prev) => ({
+          ...prev,
+          stats: {
+            ...prev.stats,
+            pendingPayments: Math.max(0, prev.stats.pendingPayments - 1),
+          },
+          paymentStatus: {
+            ...prev.paymentStatus,
+            pending: Math.max(0, prev.paymentStatus.pending - 1),
+            confirmedToday: prev.paymentStatus.confirmedToday + 1,
+          },
+          pendingPayments: prev.pendingPayments.filter(
+            (p) => p.intentId !== payment?.intentId
+          ),
+        }));
+      })
+    );
+
+    return () => {
+      unsubscribers.forEach((unsub) => unsub());
+    };
+  }, [connected, subscribe, queryClient]);
 
   // Track last refresh time
   useEffect(() => {
@@ -206,6 +352,8 @@ export default function DashboardPage() {
         })}
         actions={
           <div className="flex flex-wrap items-center gap-2">
+            {/* Realtime connection status */}
+            <ConnectionStatus connected={connected} />
             {/* Refresh rate control */}
             <div className="flex items-center gap-1 rounded-lg border border-neutral-200 bg-white px-2 py-1">
               <span className="text-xs text-neutral-500">{t('refreshLabel')}</span>

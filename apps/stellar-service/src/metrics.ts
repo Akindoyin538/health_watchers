@@ -49,6 +49,47 @@ export const stellarStreamHealth = new client.Gauge({
   registers: [register],
 });
 
+export const stellarTransactionsSubmittedTotal = new client.Counter({
+  name: 'stellar_transactions_submitted_total',
+  help: 'Total number of Stellar transactions submitted to the network',
+  labelNames: ['type'] as const,
+  registers: [register],
+});
+
+export const stellarTransactionsConfirmedTotal = new client.Counter({
+  name: 'stellar_transactions_confirmed_total',
+  help: 'Total number of Stellar transactions confirmed on-chain',
+  labelNames: ['type'] as const,
+  registers: [register],
+});
+
+export const stellarTransactionsFailedTotal = new client.Counter({
+  name: 'stellar_transactions_failed_total',
+  help: 'Total number of Stellar transactions that failed',
+  labelNames: ['type', 'reason'] as const,
+  registers: [register],
+});
+
+export const stellarTransactionConfirmationDurationSeconds = new client.Histogram({
+  name: 'stellar_transaction_confirmation_duration_seconds',
+  help: 'Time from transaction submission to on-chain confirmation in seconds',
+  labelNames: ['type'] as const,
+  buckets: [0.5, 1, 2, 5, 10, 20, 30, 60, 120, 300],
+  registers: [register],
+});
+
+export const stellarAccountBalanceXlm = new client.Gauge({
+  name: 'stellar_account_balance_xlm',
+  help: 'Current XLM balance of the service Stellar account',
+  registers: [register],
+});
+
+export const stellarNetworkFeeStroops = new client.Gauge({
+  name: 'stellar_network_fee_stroops',
+  help: 'Current Stellar network base fee in stroops',
+  registers: [register],
+});
+
 function normalisePath(path: string): string {
   return path
     .replace(/\/[A-Z0-9]{56}/gi, '/:publicKey') // Stellar public keys
