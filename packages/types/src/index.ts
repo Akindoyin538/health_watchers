@@ -267,3 +267,7 @@ export interface StaffMember {
   createdAt: string;
   updatedAt?: string;
 }
+
+// ─── Real-time (Socket.IO) Event Contract (Issue #1504) ──────────────────────
+
+export * from './realtime';

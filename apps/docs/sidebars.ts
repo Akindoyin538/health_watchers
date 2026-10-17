@@ -37,6 +37,7 @@ const sidebars: SidebarsConfig = {
       items: [
         'stellar/overview',
         'stellar/payment-flow',
+        'stellar/payment-lifecycle',
         'stellar/wallet-setup',
         'stellar/testnet-guide',
         'stellar/recurring-billing',
