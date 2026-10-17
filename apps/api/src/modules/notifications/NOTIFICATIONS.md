@@ -44,7 +44,47 @@ await dispatchNotification({
 ```
 
 Critical types (`balance_critical`, `high_risk_patient`, `unrecognized_transaction`,
-`large_transaction`, `lab_result_ready`) bypass preferences and quiet hours.
+`large_transaction`, `lab_result_ready`, `drug_interaction_critical`) bypass preferences and quiet hours.
+
+## Pre-authorization status changes (#1606)
+
+The pre-auth workflow dispatches `pre_auth_status_change` whenever a pre-auth
+transitions state (`pending → submitted → approved / denied / more-info-needed`).
+
+| Field | Value |
+| --- | --- |
+| `type` | `pre_auth_status_change` |
+| `templateKey` | `pre_auth_status_change` |
+| `channels` | `in_app`, `email` (SMS/push if the recipient has them enabled) |
+| `recipients` | Clinic staff (admins + billing staff) of the pre-auth's clinic |
+
+Template variables:
+
+| Variable | Meaning |
+| --- | --- |
+| `patientName` | Patient the pre-auth is for |
+| `procedureName` / `serviceCode` | Requested procedure / CPT code |
+| `previousStatus` | Status before the change |
+| `newStatus` | `submitted`, `approved`, `denied` or `more_info_needed` |
+| `reason` | Payer reason / denial reason (when provided) |
+| `expiresAt` | Pre-auth expiry date (approved pre-auths, typically 90 days) |
+
+## Drug interaction CDS alerts (#1605)
+
+When a medication is added to an encounter, the AI module checks drug
+interactions. Interactions classified as `severe` or `contraindicated` emit a
+critical CDS alert through the same dispatch path:
+
+| Field | Value |
+| --- | --- |
+| `type` | `drug_interaction_critical` |
+| `templateKey` | `drug_interaction_critical` |
+| `channels` | `in_app`, `email` (critical — bypasses preferences and quiet hours) |
+| `recipients` | Prescribing clinician + clinic admins |
+
+Template variables: `patientName`, `newDrug`, `interactingDrug`, `severity`
+(`severe` / `contraindicated`), `description`, `recommendation`.
+`mild` and `moderate` interactions are surfaced in-app only and do not page staff.
 
 ## Configuration
 
