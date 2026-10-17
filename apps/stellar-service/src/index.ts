@@ -105,6 +105,15 @@ import {
   getColdWalletStatistics,
   type SigningRequest,
 } from './cold-wallet.js';
+// #1588: Soroban smart contract integration
+import {
+  invokeContract,
+  SorobanSimulationError,
+  getSorobanConfig,
+  escrowDeposit,
+  escrowRelease,
+  escrowRefund,
+} from './soroban/index.js';
 
 dotenv.config();
 
@@ -1363,6 +1372,184 @@ app.post(
     }
   }
 );
+
+// ============================================================
+// Issue #1588 — Soroban Smart Contract Integration
+// ============================================================
+
+// ✅ PUBLIC: GET /soroban/config — Report Soroban network / contract configuration
+app.get('/soroban/config', (_req, res) => {
+  try {
+    const config = getSorobanConfig();
+    return res.json({ success: true, ...config });
+  } catch (error: any) {
+    return res.status(500).json({ error: error.message });
+  }
+});
+
+// ✅ PROTECTED: POST /soroban/invoke — Invoke an arbitrary Soroban contract function
+app.post('/soroban/invoke', requireSecret, checkCircuitBreakerMiddleware, async (req, res) => {
+  try {
+    const { contractId, functionName, arguments: args, signerSecretKey, signerKeyId } = req.body;
+
+    if (!contractId || !functionName) {
+      return res.status(400).json({ error: 'contractId and functionName are required' });
+    }
+
+    if (!signerSecretKey && !signerKeyId) {
+      return res.status(400).json({ error: 'signerSecretKey or signerKeyId is required' });
+    }
+
+    logger.info({ contractId, functionName }, 'Soroban contract invocation requested');
+
+    const result = await invokeContract({
+      contractId,
+      functionName,
+      arguments: Array.isArray(args) ? args : [],
+      signerSecretKey,
+      signerKeyId,
+    });
+
+    recordSuccess();
+    logger.info(
+      { contractId, functionName, txHash: result.txHash },
+      'Soroban contract invocation succeeded'
+    );
+    return res.json({ success: true, ...result });
+  } catch (error: any) {
+    recordFailure();
+    if (error instanceof SorobanSimulationError) {
+      logger.warn(
+        { contractId: req.body?.contractId, functionName: req.body?.functionName, error: error.message },
+        'Soroban simulation failed'
+      );
+      return res.status(400).json({
+        success: false,
+        error: 'Simulation failed',
+        message: error.message,
+        simulation: error.details,
+      });
+    }
+    logger.error({ error: error.message }, 'Soroban contract invocation failed');
+    return res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// ✅ PROTECTED: POST /escrow/soroban/deposit — Deposit funds into the escrow contract
+app.post('/escrow/soroban/deposit', requireSecret, checkCircuitBreakerMiddleware, async (req, res) => {
+  try {
+    const { depositor, beneficiary, amount, token, deadline, signerSecretKey, signerKeyId } =
+      req.body;
+
+    if (!depositor || !beneficiary || !amount || !token) {
+      return res
+        .status(400)
+        .json({ error: 'depositor, beneficiary, amount, and token are required' });
+    }
+
+    if (!signerSecretKey && !signerKeyId) {
+      return res.status(400).json({ error: 'signerSecretKey or signerKeyId is required' });
+    }
+
+    logger.info({ depositor, beneficiary, amount }, 'Soroban escrow deposit requested');
+
+    const result = await escrowDeposit({
+      depositor,
+      beneficiary,
+      amount,
+      token,
+      deadline,
+      signerSecretKey,
+      signerKeyId,
+    });
+
+    recordSuccess();
+    logger.info({ txHash: result.txHash }, 'Soroban escrow deposit succeeded');
+    return res.json({ success: true, ...result });
+  } catch (error: any) {
+    recordFailure();
+    if (error instanceof SorobanSimulationError) {
+      return res.status(400).json({
+        success: false,
+        error: 'Simulation failed',
+        message: error.message,
+        simulation: error.details,
+      });
+    }
+    logger.error({ error: error.message }, 'Soroban escrow deposit failed');
+    return res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// ✅ PROTECTED: POST /escrow/soroban/release — Release escrowed funds to the beneficiary
+app.post('/escrow/soroban/release', requireSecret, checkCircuitBreakerMiddleware, async (req, res) => {
+  try {
+    const { escrowId, releaser, signerSecretKey, signerKeyId } = req.body;
+
+    if (!escrowId || !releaser) {
+      return res.status(400).json({ error: 'escrowId and releaser are required' });
+    }
+
+    if (!signerSecretKey && !signerKeyId) {
+      return res.status(400).json({ error: 'signerSecretKey or signerKeyId is required' });
+    }
+
+    logger.info({ escrowId, releaser }, 'Soroban escrow release requested');
+
+    const result = await escrowRelease({ escrowId, releaser, signerSecretKey, signerKeyId });
+
+    recordSuccess();
+    logger.info({ escrowId, txHash: result.txHash }, 'Soroban escrow release succeeded');
+    return res.json({ success: true, ...result });
+  } catch (error: any) {
+    recordFailure();
+    if (error instanceof SorobanSimulationError) {
+      return res.status(400).json({
+        success: false,
+        error: 'Simulation failed',
+        message: error.message,
+        simulation: error.details,
+      });
+    }
+    logger.error({ error: error.message }, 'Soroban escrow release failed');
+    return res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// ✅ PROTECTED: POST /escrow/soroban/refund — Refund escrowed funds to the depositor
+app.post('/escrow/soroban/refund', requireSecret, checkCircuitBreakerMiddleware, async (req, res) => {
+  try {
+    const { escrowId, refunder, signerSecretKey, signerKeyId } = req.body;
+
+    if (!escrowId || !refunder) {
+      return res.status(400).json({ error: 'escrowId and refunder are required' });
+    }
+
+    if (!signerSecretKey && !signerKeyId) {
+      return res.status(400).json({ error: 'signerSecretKey or signerKeyId is required' });
+    }
+
+    logger.info({ escrowId, refunder }, 'Soroban escrow refund requested');
+
+    const result = await escrowRefund({ escrowId, refunder, signerSecretKey, signerKeyId });
+
+    recordSuccess();
+    logger.info({ escrowId, txHash: result.txHash }, 'Soroban escrow refund succeeded');
+    return res.json({ success: true, ...result });
+  } catch (error: any) {
+    recordFailure();
+    if (error instanceof SorobanSimulationError) {
+      return res.status(400).json({
+        success: false,
+        error: 'Simulation failed',
+        message: error.message,
+        simulation: error.details,
+      });
+    }
+    logger.error({ error: error.message }, 'Soroban escrow refund failed');
+    return res.status(500).json({ success: false, error: error.message });
+  }
+});
 
 // ✅ PUBLIC: GET /escrow/:balanceId — Get escrow balance details
 app.get('/escrow/:balanceId', async (req, res) => {

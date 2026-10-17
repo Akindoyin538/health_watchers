@@ -293,9 +293,203 @@
             "type": "string"
           }
         }
+      },
+      "PaginationMeta": {
+        "type": "object",
+        "description": "Standard pagination metadata returned by every list endpoint.",
+        "required": ["total", "page", "limit", "totalPages", "hasNext", "hasPrev"],
+        "properties": {
+          "total": {
+            "type": "integer",
+            "description": "Total number of records matching the query.",
+            "example": 137
+          },
+          "page": {
+            "type": "integer",
+            "description": "Current page number (1-based).",
+            "example": 1
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Maximum number of records per page.",
+            "example": 20
+          },
+          "totalPages": {
+            "type": "integer",
+            "description": "Total number of pages available.",
+            "example": 7
+          },
+          "hasNext": {
+            "type": "boolean",
+            "description": "Whether a next page exists.",
+            "example": true
+          },
+          "hasPrev": {
+            "type": "boolean",
+            "description": "Whether a previous page exists.",
+            "example": false
+          },
+          "nextCursor": {
+            "type": "string",
+            "nullable": true,
+            "description": "Opaque cursor for the next page (cursor-based pagination only)."
+          }
+        }
+      },
+      "PaginatedResponse": {
+        "type": "object",
+        "description": "Standard envelope for all paginated list endpoints.",
+        "required": ["data", "pagination"],
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {}
+          },
+          "pagination": {
+            "$ref": "#/components/schemas/PaginationMeta"
+          }
+        }
+      },
+      "PaginatedPatientResponse": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/PaginatedResponse"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "data": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/V2Patient"
+                }
+              }
+            }
+          }
+        ]
+      },
+      "PaginatedPaymentResponse": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/PaginatedResponse"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "data": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/PaymentRecord"
+                }
+              }
+            }
+          }
+        ]
+      },
+      "EncounterAttachment": {
+        "type": "object",
+        "required": ["id", "encounterId", "fileName", "mimeType", "sizeBytes", "createdAt"],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "encounterId": {
+            "type": "string"
+          },
+          "fileName": {
+            "type": "string"
+          },
+          "mimeType": {
+            "type": "string",
+            "example": "application/pdf"
+          },
+          "sizeBytes": {
+            "type": "integer"
+          },
+          "category": {
+            "type": "string",
+            "enum": ["image", "pdf", "lab-report", "other"],
+            "nullable": true
+          },
+          "scanStatus": {
+            "type": "string",
+            "enum": ["pending", "clean", "infected", "failed"],
+            "description": "Result of the virus scan performed before storage."
+          },
+          "uploadedBy": {
+            "type": "string",
+            "nullable": true
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "SignedUrlResponse": {
+        "type": "object",
+        "required": ["url", "expiresIn"],
+        "properties": {
+          "url": {
+            "type": "string",
+            "description": "Time-limited signed URL for downloading the attachment."
+          },
+          "expiresIn": {
+            "type": "integer",
+            "description": "Seconds until the signed URL expires.",
+            "example": 3600
+          },
+          "fileName": {
+            "type": "string"
+          },
+          "mimeType": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "parameters": {
+      "PageParam": {
+        "name": "page",
+        "in": "query",
+        "description": "Page number (1-based).",
+        "schema": {
+          "type": "integer",
+          "minimum": 1,
+          "default": 1
+        }
+      },
+      "LimitParam": {
+        "name": "limit",
+        "in": "query",
+        "description": "Maximum number of records per page.",
+        "schema": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100,
+          "default": 20
+        }
+      },
+      "SortParam": {
+        "name": "sort",
+        "in": "query",
+        "description": "Field to sort by, optionally prefixed with `-` for descending order (e.g. `-createdAt`).",
+        "schema": {
+          "type": "string",
+          "example": "-createdAt"
+        }
+      },
+      "CursorParam": {
+        "name": "cursor",
+        "in": "query",
+        "description": "Opaque cursor from `pagination.nextCursor`.",
+        "schema": {
+          "type": "string"
+        }
       }
     }
   },
+=======
   "security": [
     {
       "bearerAuth": []
@@ -1081,20 +1275,16 @@
         ],
         "parameters": [
           {
-            "in": "query",
-            "name": "page",
-            "schema": {
-              "type": "integer",
-              "default": 1
-            }
+            "$ref": "#/components/parameters/PageParam"
           },
           {
-            "in": "query",
-            "name": "limit",
-            "schema": {
-              "type": "integer",
-              "default": 20
-            }
+            "$ref": "#/components/parameters/LimitParam"
+          },
+          {
+            "$ref": "#/components/parameters/SortParam"
+          },
+          {
+            "$ref": "#/components/parameters/CursorParam"
           },
           {
             "in": "query",
@@ -1118,32 +1308,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "status": {
-                      "type": "string"
-                    },
-                    "data": {
-                      "type": "array",
-                      "items": {
-                        "$ref": "#/components/schemas/PaymentRecord"
-                      }
-                    },
-                    "meta": {
-                      "type": "object",
-                      "properties": {
-                        "total": {
-                          "type": "integer"
-                        },
-                        "page": {
-                          "type": "integer"
-                        },
-                        "limit": {
-                          "type": "integer"
-                        }
-                      }
-                    }
-                  }
+                  "$ref": "#/components/schemas/PaginatedPaymentResponse"
                 }
               }
             }
@@ -2068,6 +2233,601 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/patients": {
+      "get": {
+        "summary": "List patients (paginated)",
+        "tags": ["Patients"],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/PageParam"
+          },
+          {
+            "$ref": "#/components/parameters/LimitParam"
+          },
+          {
+            "$ref": "#/components/parameters/SortParam"
+          },
+          {
+            "$ref": "#/components/parameters/CursorParam"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A page of patients",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaginatedPatientResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid query or malformed cursor",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid token"
+          }
+        }
+      }
+    },
+    "/patients/{id}/communications": {
+      "get": {
+        "summary": "List a patient's communication log (paginated)",
+        "description": "Returns SMS, email and in-app messages sent to the patient. Restricted to clinic staff with appropriate roles.",
+        "tags": ["Patients"],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/PageParam"
+          },
+          {
+            "$ref": "#/components/parameters/LimitParam"
+          },
+          {
+            "$ref": "#/components/parameters/SortParam"
+          },
+          {
+            "$ref": "#/components/parameters/CursorParam"
+          },
+          {
+            "name": "channel",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": ["sms", "email", "in-app"]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A page of communication log entries",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaginatedResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Insufficient role to view communication logs",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Patient not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/encounters": {
+      "get": {
+        "summary": "List encounters (paginated)",
+        "tags": ["Encounters"],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/PageParam"
+          },
+          {
+            "$ref": "#/components/parameters/LimitParam"
+          },
+          {
+            "$ref": "#/components/parameters/SortParam"
+          },
+          {
+            "$ref": "#/components/parameters/CursorParam"
+          },
+          {
+            "name": "patientId",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A page of encounters",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaginatedResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/encounters/{id}/attachments": {
+      "get": {
+        "summary": "List attachments for an encounter (paginated)",
+        "tags": ["Encounters"],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/PageParam"
+          },
+          {
+            "$ref": "#/components/parameters/LimitParam"
+          },
+          {
+            "$ref": "#/components/parameters/SortParam"
+          },
+          {
+            "$ref": "#/components/parameters/CursorParam"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A page of encounter attachments",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/PaginatedResponse"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/EncounterAttachment"
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Encounter not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Upload an attachment to an encounter",
+        "description": "Accepts images, PDFs and lab reports. Files are virus-scanned before being stored via the documents storage service.",
+        "tags": ["Encounters"],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "required": ["file"],
+                "properties": {
+                  "file": {
+                    "type": "string",
+                    "format": "binary",
+                    "description": "File to upload (max 10 MB; image/*, application/pdf)."
+                  },
+                  "category": {
+                    "type": "string",
+                    "enum": ["image", "pdf", "lab-report", "other"]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Attachment stored",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EncounterAttachment"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Missing file, unsupported type or file too large",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Encounter not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "File rejected by virus scan",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/encounters/{id}/attachments/{attachmentId}/download": {
+      "get": {
+        "summary": "Get a signed download URL for an encounter attachment",
+        "tags": ["Encounters"],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "attachmentId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Signed URL for the attachment",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SignedUrlResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Encounter or attachment not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/appointments": {
+      "get": {
+        "summary": "List appointments (paginated)",
+        "tags": ["Appointments"],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/PageParam"
+          },
+          {
+            "$ref": "#/components/parameters/LimitParam"
+          },
+          {
+            "$ref": "#/components/parameters/SortParam"
+          },
+          {
+            "$ref": "#/components/parameters/CursorParam"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A page of appointments",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaginatedResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/invoices": {
+      "get": {
+        "summary": "List invoices (paginated)",
+        "tags": ["Invoices"],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/PageParam"
+          },
+          {
+            "$ref": "#/components/parameters/LimitParam"
+          },
+          {
+            "$ref": "#/components/parameters/SortParam"
+          },
+          {
+            "$ref": "#/components/parameters/CursorParam"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A page of invoices",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaginatedResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/lab-results": {
+      "get": {
+        "summary": "List lab results (paginated)",
+        "tags": ["Lab Results"],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/PageParam"
+          },
+          {
+            "$ref": "#/components/parameters/LimitParam"
+          },
+          {
+            "$ref": "#/components/parameters/SortParam"
+          },
+          {
+            "$ref": "#/components/parameters/CursorParam"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A page of lab results",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaginatedResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/medications": {
+      "get": {
+        "summary": "List medications (paginated)",
+        "tags": ["Medications"],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/PageParam"
+          },
+          {
+            "$ref": "#/components/parameters/LimitParam"
+          },
+          {
+            "$ref": "#/components/parameters/SortParam"
+          },
+          {
+            "$ref": "#/components/parameters/CursorParam"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A page of medications",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaginatedResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/referrals": {
+      "get": {
+        "summary": "List referrals (paginated)",
+        "tags": ["Referrals"],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/PageParam"
+          },
+          {
+            "$ref": "#/components/parameters/LimitParam"
+          },
+          {
+            "$ref": "#/components/parameters/SortParam"
+          },
+          {
+            "$ref": "#/components/parameters/CursorParam"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A page of referrals",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaginatedResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/notifications": {
+      "get": {
+        "summary": "List notifications (paginated)",
+        "tags": ["Notifications"],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/PageParam"
+          },
+          {
+            "$ref": "#/components/parameters/LimitParam"
+          },
+          {
+            "$ref": "#/components/parameters/SortParam"
+          },
+          {
+            "$ref": "#/components/parameters/CursorParam"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A page of notifications",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaginatedResponse"
                 }
               }
             }
