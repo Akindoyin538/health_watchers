@@ -36,6 +36,7 @@ import {
   reportGenerationLimiter,
   generalLimiter,
 } from '../../middlewares/rate-limit.middleware';
+import { idempotency } from '../../middlewares/idempotency.middleware';
 import express from 'express';
 
 // ── Auth ──────────────────────────────────────────────────────────────────────
@@ -189,6 +190,11 @@ v1Router.use('/ai', aiLimiter, express.json({ limit: aiLimit }), aiRoutes);
 v1Router.use('/dashboard', dashboardRoutes);
 
 // ── Payments group ────────────────────────────────────────────────────────────
+// #1600 — Idempotency keys guard against duplicate payment submissions caused
+// by network retries. Applied to the mutating payment-creation endpoints only.
+v1Router.post('/payments', paymentLimiter, idempotency({ scope: 'payments' }));
+v1Router.post('/payments/batch', paymentLimiter, idempotency({ scope: 'payments' }));
+v1Router.post('/payments/recurring', paymentLimiter, idempotency({ scope: 'payments' }));
 v1Router.use('/payments', paymentLimiter, paymentsRouter);
 v1Router.use('/payments', reimbursementRoutes);
 // Stellar DEX trading (#1427) — submit and review DEX trade offers

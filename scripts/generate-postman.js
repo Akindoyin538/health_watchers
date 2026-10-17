@@ -75,7 +75,84 @@ function convertToPostman(openapiSpec) {
   }
 }
 
-// ── 3. Validate collection covers required folders ────────────────────────────
+// ── 3. Augment collection with headers/params not always emitted by converter ─
+// The OpenAPI → Postman converter does not reliably emit custom headers or
+// cursor query params, so we inject them explicitly to keep the generated
+// collection in sync with the spec.
+const PAYMENT_POST_PATHS = ['/payments', '/payments/batch', '/payments/recurring'];
+const INBOUND_WEBHOOK_PATH = '/webhooks/inbound';
+const AUDIT_LOG_PATH = '/audit-logs';
+
+function normalizePath(rawPath) {
+  if (!rawPath) return '';
+  // Postman paths look like "{{baseUrl}}/payments" or "/payments"
+  return rawPath.replace(/^\{\{[^}]+\}\}/, '').replace(/\/+$/, '') || '/';
+}
+
+function ensureHeader(request, key, value, description) {
+  request.header = request.header || [];
+  if (request.header.some((h) => (h.key || '').toLowerCase() === key.toLowerCase())) {
+    return;
+  }
+  request.header.push({ key, value, description, type: 'text' });
+}
+
+function ensureQueryParam(request, key, value, description) {
+  request.url = request.url || {};
+  if (typeof request.url === 'string') {
+    request.url = { raw: request.url };
+  }
+  request.url.query = request.url.query || [];
+  if (request.url.query.some((q) => (q.key || '').toLowerCase() === key.toLowerCase())) {
+    return;
+  }
+  request.url.query.push({ key, value, description, disabled: true });
+}
+
+function walkItems(items, visit) {
+  (items || []).forEach((item) => {
+    if (item.item) {
+      walkItems(item.item, visit);
+    } else if (item.request) {
+      visit(item);
+    }
+  });
+}
+
+function augmentCollection(collection) {
+  walkItems(collection.item, (item) => {
+    const request = item.request;
+    const method = (request.method || 'GET').toUpperCase();
+    const rawUrl = typeof request.url === 'string' ? request.url : request.url && request.url.raw;
+    const pathname = normalizePath(rawUrl);
+
+    if (method === 'POST' && PAYMENT_POST_PATHS.includes(pathname)) {
+      ensureHeader(
+        request,
+        'Idempotency-Key',
+        '{{$guid}}',
+        'Unique key to make payment creation idempotent (24h TTL).'
+      );
+    }
+
+    if (method === 'POST' && pathname === INBOUND_WEBHOOK_PATH) {
+      ensureHeader(
+        request,
+        'X-Webhook-Signature',
+        '{{webhookSignature}}',
+        'HMAC-SHA256 signature of the raw request body.'
+      );
+    }
+
+    if (method === 'GET' && pathname === AUDIT_LOG_PATH) {
+      ensureQueryParam(request, 'after', '{{afterCursor}}', 'Return entries after this cursor (_id).');
+      ensureQueryParam(request, 'before', '{{beforeCursor}}', 'Return entries before this cursor (_id).');
+    }
+  });
+  return collection;
+}
+
+// ── 4. Validate collection covers required folders ────────────────────────────
 function validateCollection(collection) {
   const required = ['Auth', 'Patients', 'Encounters', 'Payments'];
   const folders = (collection.item || []).map((i) => i.name);
@@ -95,7 +172,7 @@ function validateCollection(collection) {
 if (update) {
   console.log('Generating Postman collection from OpenAPI spec…');
   const spec = exportOpenApiSpec();
-  const collection = convertToPostman(spec);
+  const collection = augmentCollection(convertToPostman(spec));
   validateCollection(collection);
   fs.writeFileSync(COLLECTION_PATH, JSON.stringify(collection, null, 2));
   console.log(`✅ Written to ${COLLECTION_PATH}`);
@@ -106,6 +183,6 @@ if (update) {
     console.error(`❌ Collection not found at ${COLLECTION_PATH}`);
     process.exit(1);
   }
-  const collection = JSON.parse(fs.readFileSync(COLLECTION_PATH, 'utf8'));
+  const collection = augmentCollection(JSON.parse(fs.readFileSync(COLLECTION_PATH, 'utf8')));
   validateCollection(collection);
 }

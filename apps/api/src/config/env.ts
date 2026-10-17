@@ -83,6 +83,26 @@ const envSchema = z.object({
   // ── TLS enforcement ───────────────────────────────────────────────────────
   TRUST_PROXY: z.string().optional(),
   NODE_ENV: z.string().optional(),
+
+  // ── Webhook signature verification (HMAC-SHA256) ──────────────────────────
+  // Current signing secret used to verify X-Webhook-Signature on incoming webhooks.
+  WEBHOOK_SIGNING_SECRET: z
+    .string()
+    .min(32, 'WEBHOOK_SIGNING_SECRET must be at least 32 characters (too weak)')
+    .optional(),
+  // Previous signing secret, accepted during key rotation.
+  WEBHOOK_SIGNING_SECRET_PREVIOUS: z
+    .string()
+    .min(32, 'WEBHOOK_SIGNING_SECRET_PREVIOUS must be at least 32 characters (too weak)')
+    .optional(),
+
+  // ── Idempotency keys for payment endpoints ────────────────────────────────
+  // TTL (in seconds) for idempotency key → response mappings. Default: 24 hours.
+  IDEMPOTENCY_TTL_SECONDS: z
+    .string()
+    .regex(/^\d+$/, 'IDEMPOTENCY_TTL_SECONDS must be a positive integer')
+    .refine((v) => Number(v) > 0, 'IDEMPOTENCY_TTL_SECONDS must be greater than 0')
+    .default('86400'),
 });
 
 const result = envSchema.safeParse(process.env);
@@ -161,6 +181,15 @@ if (isProd && !env.SMTP_HOST) {
   );
 }
 
+// Incoming webhook signature verification — required in production
+if (isProd && !env.WEBHOOK_SIGNING_SECRET) {
+  console.warn(
+    '⚠️  WARNING: WEBHOOK_SIGNING_SECRET is not set in production. ' +
+      'Incoming webhook signature verification will be disabled and unauthenticated ' +
+      'webhook requests will be rejected.'
+  );
+}
+
 // Log non-secret config values at startup
 console.log('✅ Config validated:');
 console.log(`   API_PORT:        ${env.API_PORT}`);
@@ -171,3 +200,6 @@ console.log(`   HIPAA FIELD_ENCRYPTION_KEY: ${env.FIELD_ENCRYPTION_KEY ? '✅ se
 console.log(`   HIPAA AUDIT_ENCRYPTION_KEY: ${env.AUDIT_ENCRYPTION_KEY ? '✅ set' : '⚠️  NOT SET'}`);
 console.log(`   HIPAA BACKUP_ENCRYPTION_KEY: ${env.BACKUP_ENCRYPTION_KEY ? '✅ set' : '⚠️  NOT SET'}`);
 console.log(`   HIPAA SMTP_HOST:             ${env.SMTP_HOST ? '✅ set' : '⚠️  NOT SET'}`);
+console.log(`   WEBHOOK_SIGNING_SECRET:      ${env.WEBHOOK_SIGNING_SECRET ? '✅ set' : '⚠️  NOT SET'}`);
+console.log(`   WEBHOOK_SIGNING_SECRET_PREVIOUS: ${env.WEBHOOK_SIGNING_SECRET_PREVIOUS ? '✅ set' : '—'}`);
+console.log(`   IDEMPOTENCY_TTL_SECONDS:     ${env.IDEMPOTENCY_TTL_SECONDS}`);

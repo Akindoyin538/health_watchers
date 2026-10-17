@@ -293,6 +293,98 @@
             "type": "string"
           }
         }
+      },
+      "ValidationError": {
+        "type": "object",
+        "description": "Returned with HTTP 400 when a request body or query string fails Zod validation.",
+        "required": ["error", "message", "details"],
+        "properties": {
+          "error": {
+            "type": "string",
+            "example": "ValidationError"
+          },
+          "message": {
+            "type": "string",
+            "example": "Request validation failed"
+          },
+          "details": {
+            "type": "array",
+            "description": "One entry per invalid field.",
+            "items": {
+              "type": "object",
+              "required": ["path", "message"],
+              "properties": {
+                "path": {
+                  "type": "string",
+                  "description": "Dot-notation path of the offending field, e.g. `body.amount` or `query.limit`.",
+                  "example": "body.amount"
+                },
+                "message": {
+                  "type": "string",
+                  "example": "Expected string, received number"
+                },
+                "code": {
+                  "type": "string",
+                  "example": "invalid_type"
+                }
+              }
+            }
+          }
+        }
+      },
+      "AuditLogEntry": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "clinicId": {
+            "type": "string"
+          },
+          "action": {
+            "type": "string"
+          },
+          "actorId": {
+            "type": "string",
+            "nullable": true
+          },
+          "resourceType": {
+            "type": "string",
+            "nullable": true
+          },
+          "resourceId": {
+            "type": "string",
+            "nullable": true
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      }
+    },
+    "parameters": {
+      "IdempotencyKey": {
+        "name": "Idempotency-Key",
+        "in": "header",
+        "required": false,
+        "description": "Client-generated unique key (UUID recommended) used to make payment creation safe to retry. The first request with a given key is processed and its response cached for 24 hours; any subsequent request with the same key returns the cached response verbatim (same status code and body) without creating a duplicate payment. Reusing a key with a different request body returns 409.",
+        "schema": {
+          "type": "string",
+          "minLength": 8,
+          "maxLength": 255
+        },
+        "example": "3f1c9b0e-8a2d-4c6f-9b7e-2d5a1c4e6f80"
+      },
+      "WebhookSignature": {
+        "name": "X-Webhook-Signature",
+        "in": "header",
+        "required": true,
+        "description": "HMAC-SHA256 signature of the raw request body, hex-encoded, computed with the receiver's webhook signing secret. Format: `t=<unix-seconds>,v1=<hex-digest>`. Requests with a missing, malformed, or mismatched signature are rejected with 401. Signatures older than 5 minutes are rejected to prevent replay.",
+        "schema": {
+          "type": "string"
+        },
+        "example": "t=1717000000,v1=5d41402abc4b2a76b9719d911017c592"
       }
     }
   },
@@ -1318,11 +1410,16 @@
     "/payments/intent": {
       "post": {
         "summary": "Create a payment intent",
-        "description": "Creates a pending payment record and returns the intent ID and memo for the Stellar transaction.",
+        "description": "Creates a pending payment record and returns the intent ID and memo for the Stellar transaction. Supports the `Idempotency-Key` header: retries with the same key return the original response for 24 hours instead of creating a duplicate intent.",
         "tags": ["Payments"],
         "security": [
           {
             "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
           }
         ],
         "requestBody": {
@@ -1393,13 +1490,201 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Error"
+                  "$ref": "#/components/schemas/ValidationError"
                 }
               }
             }
           },
           "402": {
             "description": "Fee budget exceeded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Idempotency-Key was already used with a different request body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/payments/batch": {
+      "post": {
+        "summary": "Create multiple payment intents in one request",
+        "description": "Creates up to 50 payment intents atomically. Supports the `Idempotency-Key` header: retries with the same key return the original response for 24 hours instead of creating duplicate intents.",
+        "tags": ["Payments"],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["payments"],
+                "properties": {
+                  "payments": {
+                    "type": "array",
+                    "minItems": 1,
+                    "maxItems": 50,
+                    "items": {
+                      "$ref": "#/components/schemas/CreatePaymentIntentRequest"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Payment intents created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "example": "success"
+                    },
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/PaymentRecord"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Idempotency-Key was already used with a different request body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/payments/recurring": {
+      "post": {
+        "summary": "Create a recurring payment schedule",
+        "description": "Creates a recurring payment schedule. Supports the `Idempotency-Key` header: retries with the same key return the original response for 24 hours instead of creating a duplicate schedule.",
+        "tags": ["Payments"],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["amount", "destination", "interval"],
+                "properties": {
+                  "amount": {
+                    "type": "string"
+                  },
+                  "destination": {
+                    "type": "string"
+                  },
+                  "assetCode": {
+                    "type": "string",
+                    "default": "XLM"
+                  },
+                  "patientId": {
+                    "type": "string"
+                  },
+                  "interval": {
+                    "type": "string",
+                    "enum": ["daily", "weekly", "monthly"]
+                  },
+                  "startDate": {
+                    "type": "string",
+                    "format": "date"
+                  },
+                  "endDate": {
+                    "type": "string",
+                    "format": "date"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Recurring payment schedule created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "example": "success"
+                    },
+                    "data": {
+                      "type": "object"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Idempotency-Key was already used with a different request body",
             "content": {
               "application/json": {
                 "schema": {
@@ -2075,6 +2360,213 @@
         }
       }
     },
+    "/webhooks/inbound": {
+      "post": {
+        "summary": "Receive an inbound webhook from an external system",
+        "description": "Accepts events from external providers (e.g. Stellar payment events). Every request must carry a valid `X-Webhook-Signature` header computed with the receiver's webhook signing secret. Signing secrets can be rotated: during a rotation window both the previous and the current secret are accepted, after which the previous secret is revoked.",
+        "tags": ["Webhooks"],
+        "security": [],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/WebhookSignature"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["event", "data"],
+                "properties": {
+                  "event": {
+                    "type": "string",
+                    "example": "payment.confirmed"
+                  },
+                  "data": {
+                    "type": "object"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Webhook accepted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "example": "success"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Malformed payload",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Signature missing, malformed, expired, or invalid",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/audit-logs": {
+      "get": {
+        "summary": "List audit log entries (cursor pagination)",
+        "description": "Cursor-based pagination over the audit log, ordered by `createdAt` descending then `_id` descending. Pass `after` to page forward or `before` to page backward; both cursors are opaque and are returned as `nextCursor` / `prevCursor` in the response.",
+        "tags": ["Audit"],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20
+            }
+          },
+          {
+            "name": "after",
+            "in": "query",
+            "description": "Opaque forward cursor — return entries older than this cursor.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "before",
+            "in": "query",
+            "description": "Opaque backward cursor — return entries newer than this cursor.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "action",
+            "in": "query",
+            "description": "Filter by audit action.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "resourceType",
+            "in": "query",
+            "description": "Filter by resource type.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "description": "Only entries created at or after this timestamp.",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "description": "Only entries created at or before this timestamp.",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A page of audit log entries",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["status", "data", "meta"],
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "example": "success"
+                    },
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/AuditLogEntry"
+                      }
+                    },
+                    "meta": {
+                      "type": "object",
+                      "properties": {
+                        "limit": {
+                          "type": "integer"
+                        },
+                        "count": {
+                          "type": "integer"
+                        },
+                        "hasMore": {
+                          "type": "boolean"
+                        },
+                        "nextCursor": {
+                          "type": "string",
+                          "nullable": true,
+                          "description": "Pass as `after` to fetch the next (older) page."
+                        },
+                        "prevCursor": {
+                          "type": "string",
+                          "nullable": true,
+                          "description": "Pass as `before` to fetch the previous (newer) page."
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid query parameters or malformed cursor",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid token"
+          }
+        }
+      }
+    },
     "/patients/{id}/export": {
       "get": {
         "summary": "Export a patient's complete health record (HIPAA Right of Access)",
@@ -2098,5 +2590,18 @@
       }
     }
   },
-  "tags": []
+  "tags": [
+    {
+      "name": "Payments",
+      "description": "Stellar payment intents. Creation endpoints accept an `Idempotency-Key` header; retries with the same key return the cached response for 24 hours."
+    },
+    {
+      "name": "Webhooks",
+      "description": "Inbound webhooks from external systems. Requests must be signed with HMAC-SHA256 and carry the signature in `X-Webhook-Signature`."
+    },
+    {
+      "name": "Audit",
+      "description": "Audit log access with cursor-based pagination."
+    }
+  ]
 }

@@ -154,7 +154,16 @@ app.use(requestIdPropagationMiddleware);
 
 // ── Body parsing & sanitization ───────────────────────────────────────────────
 app.use(cookieParser());
-app.use(express.json({ limit: standardLimit }));
+// Capture the raw request body so webhook signature verification can compute
+// an HMAC over the exact bytes received (JSON re-serialization is not stable).
+app.use(
+  express.json({
+    limit: standardLimit,
+    verify: (req, _res, buf) => {
+      (req as any).rawBody = buf;
+    },
+  })
+);
 app.use(express.urlencoded({ extended: true, limit: standardLimit }));
 app.use(mongoSanitize({ replaceWith: '_' }));
 app.use(requestAuditMiddleware);
