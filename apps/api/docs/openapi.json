@@ -196,14 +196,151 @@
       },
       "Error": {
         "type": "object",
+        "description": "Standard error response returned by all controllers.",
+        "required": ["success", "error"],
         "properties": {
-          "error": {
-            "type": "string"
+          "success": {
+            "type": "boolean",
+            "enum": [false]
           },
-          "message": {
-            "type": "string"
+          "error": {
+            "type": "object",
+            "required": ["code", "message"],
+            "properties": {
+              "code": {
+                "type": "string",
+                "description": "Machine-readable error code, e.g. `VALIDATION_ERROR`.",
+                "example": "INTERNAL_ERROR"
+              },
+              "message": {
+                "type": "string",
+                "description": "Human-readable error message.",
+                "example": "An unexpected error occurred"
+              },
+              "details": {
+                "type": "object",
+                "nullable": true,
+                "description": "Optional additional error context.",
+                "additionalProperties": true
+              }
+            },
+            "additionalProperties": false
+          },
+          "requestId": {
+            "type": "string",
+            "nullable": true,
+            "description": "Correlation id for the request, when available."
           }
-        }
+        },
+        "additionalProperties": false
+      },
+      "ValidationError": {
+        "type": "object",
+        "description": "Returned when request input fails validation (HTTP 400).",
+        "required": ["success", "error"],
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "enum": [false]
+          },
+          "error": {
+            "type": "object",
+            "required": ["code", "message"],
+            "properties": {
+              "code": {
+                "type": "string",
+                "enum": ["VALIDATION_ERROR"]
+              },
+              "message": {
+                "type": "string",
+                "example": "Invalid request payload"
+              },
+              "details": {
+                "type": "object",
+                "nullable": true,
+                "additionalProperties": true
+              }
+            },
+            "additionalProperties": false
+          },
+          "requestId": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "RateLimitError": {
+        "type": "object",
+        "description": "Returned when a client exceeds its rate limit (HTTP 429).",
+        "required": ["success", "error"],
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "enum": [false]
+          },
+          "error": {
+            "type": "object",
+            "required": ["code", "message"],
+            "properties": {
+              "code": {
+                "type": "string",
+                "enum": ["RATE_LIMIT_EXCEEDED"]
+              },
+              "message": {
+                "type": "string",
+                "example": "Too many requests"
+              },
+              "details": {
+                "type": "object",
+                "nullable": true,
+                "additionalProperties": true
+              }
+            },
+            "additionalProperties": false
+          },
+          "requestId": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "NotFoundError": {
+        "type": "object",
+        "description": "Returned when the requested resource does not exist (HTTP 404).",
+        "required": ["success", "error"],
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "enum": [false]
+          },
+          "error": {
+            "type": "object",
+            "required": ["code", "message"],
+            "properties": {
+              "code": {
+                "type": "string",
+                "enum": ["NOT_FOUND"]
+              },
+              "message": {
+                "type": "string",
+                "example": "Resource not found"
+              },
+              "details": {
+                "type": "object",
+                "nullable": true,
+                "additionalProperties": true
+              }
+            },
+            "additionalProperties": false
+          },
+          "requestId": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
       },
       "PaymentRecord": {
         "type": "object",
@@ -846,13 +983,30 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/V2Error"
+                  "$ref": "#/components/schemas/ValidationError"
                 }
               }
             }
           },
           "401": {
-            "description": "Missing or invalid token"
+            "description": "Missing or invalid token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limit exceeded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RateLimitError"
+                }
+              }
+            }
           }
         }
       }
@@ -1226,7 +1380,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Error"
+                  "$ref": "#/components/schemas/ValidationError"
                 }
               }
             }
@@ -1297,7 +1451,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Error"
+                  "$ref": "#/components/schemas/ValidationError"
                 }
               }
             }
@@ -1393,7 +1547,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Error"
+                  "$ref": "#/components/schemas/ValidationError"
                 }
               }
             }
@@ -1466,7 +1620,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Error"
+                  "$ref": "#/components/schemas/ValidationError"
                 }
               }
             }
@@ -1476,7 +1630,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Error"
+                  "$ref": "#/components/schemas/NotFoundError"
                 }
               }
             }
@@ -1782,7 +1936,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Error"
+                  "$ref": "#/components/schemas/ValidationError"
                 }
               }
             }
@@ -1870,7 +2024,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Error"
+                  "$ref": "#/components/schemas/NotFoundError"
                 }
               }
             }
@@ -1939,7 +2093,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Error"
+                  "$ref": "#/components/schemas/NotFoundError"
                 }
               }
             }
@@ -2003,7 +2157,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Error"
+                  "$ref": "#/components/schemas/NotFoundError"
                 }
               }
             }
@@ -2067,7 +2221,150 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Error"
+                  "$ref": "#/components/schemas/NotFoundError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/payments/batch": {
+      "post": {
+        "summary": "Create multiple payment intents in a single request",
+        "tags": ["Payments"],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["payments"],
+                "properties": {
+                  "payments": {
+                    "type": "array",
+                    "minItems": 1,
+                    "maxItems": 50,
+                    "items": {
+                      "$ref": "#/components/schemas/CreatePaymentIntentRequest"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Batch of payment intents created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "example": "success"
+                    },
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/PaymentRecord"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error (empty batch, too many items, invalid entry)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limit exceeded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RateLimitError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/payments/batch/{batchId}": {
+      "get": {
+        "summary": "Get the status of a batch payment submission",
+        "tags": ["Payments"],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "batchId",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Batch status",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string"
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "batchId": {
+                          "type": "string"
+                        },
+                        "state": {
+                          "type": "string",
+                          "enum": ["pending", "processing", "completed", "failed"]
+                        },
+                        "payments": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/PaymentRecord"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Batch not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotFoundError"
                 }
               }
             }
