@@ -45,7 +45,7 @@ import { userManagementRoutes } from '../../modules/users/user-management.contro
 
 // ── Clinical ──────────────────────────────────────────────────────────────────
 import { deprecated, V1_SUNSET_DATE } from '../../middlewares/api-versioning.middleware';
-import { patientRoutes } from '../../modules/patients/patients.controller';
+import patientRoutes from '../../modules/patients/patients.routes';
 import { medicalHistoryRoutes } from '../../modules/patients/medical-history.controller';
 import { patientPhotoRoutes } from '../../modules/patients/photo.controller';
 import { encounterRoutes } from '../../modules/encounters/encounters.controller';
