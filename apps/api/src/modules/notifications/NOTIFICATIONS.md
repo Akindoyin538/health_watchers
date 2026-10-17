@@ -46,6 +46,62 @@ await dispatchNotification({
 Critical types (`balance_critical`, `high_risk_patient`, `unrecognized_transaction`,
 `large_transaction`, `lab_result_ready`) bypass preferences and quiet hours.
 
+## Follow-up reminders (encounter outcomes — #1591)
+
+When an encounter is marked with an outcome that requires follow-up (e.g.
+`follow_up_needed`), the follow-up reminder job
+(`modules/encounters/follow-up-reminder-job.ts`) schedules a reminder through
+`dispatchNotification()`. The notification type is `follow_up_reminder`; it is
+**not** critical, so it respects user preferences and quiet hours.
+
+```ts
+await dispatchNotification({
+  userId: patient.userId,
+  clinicId: encounter.clinicId,
+  type: 'follow_up_reminder',
+  templateKey: 'follow_up_reminder',
+  variables: {
+    patientName: patient.firstName,
+    clinicianName: encounter.clinicianName,
+    dueDate: encounter.followUpDueAt.toISOString(),
+    reason: encounter.outcomeNotes ?? '',
+  },
+  channels: ['in_app', 'email', 'sms'],
+  scheduledFor: encounter.followUpDueAt,
+});
+```
+
+The job is idempotent: each encounter stores the id of the notification it
+scheduled (`followUpReminderNotificationId`) so re-runs do not duplicate
+reminders, and reminders are cancelled when the outcome is later resolved.
+
+## Multi-signature payment approvals (#1594)
+
+When a Stellar payment exceeds the clinic's multi-sig threshold, the payment is
+created in `pending_signatures` state and every required signer is notified
+with the critical type `payment_signature_required` (bypasses preferences and
+quiet hours). Signers approve via `POST /payments/:id/approve`; once the
+threshold is met the transaction is submitted, and if signatures are not
+gathered within 24 hours the payment is auto-voided and signers receive
+`payment_signature_expired`.
+
+```ts
+await dispatchNotification({
+  userId: signer.userId,
+  clinicId: payment.clinicId,
+  type: 'payment_signature_required',
+  templateKey: 'payment_signature_required',
+  variables: {
+    amount: payment.amount,
+    asset: payment.asset,
+    destination: payment.destination,
+    expiresAt: payment.signatureDeadline.toISOString(),
+    approvalUrl: `/payments/${payment.id}/approve`,
+  },
+  channels: ['in_app', 'email', 'push'],
+});
+```
+
 ## Configuration
 
 | Env var | Channel |
