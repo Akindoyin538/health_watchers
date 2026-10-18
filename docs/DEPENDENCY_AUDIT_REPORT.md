@@ -211,4 +211,4 @@ For accepted license policy, see `.license-checker.json`.
 - [`.license-checker.json`](../.license-checker.json) — approved license list
 - [`.github/workflows/dependency-scan.yml`](../.github/workflows/dependency-scan.yml) — automated scanning workflow
 - [`.github/workflows/dependency-vulnerability-tracking.yml`](../.github/workflows/dependency-vulnerability-tracking.yml) — vulnerability tracking workflow
-- [VULNERABILITY_REMEDIATION_2026-08.md](./VULNERABILITY_REMEDIATION_2026-08.md) — prior month's remediation record
+- [SECURITY_REMEDIATION.md — Remediation Log: 2026-08](./SECURITY_REMEDIATION.md#remediation-log-2026-08) — prior month's remediation record

@@ -69,7 +69,7 @@ Daily Scheduler
     └─ Update next payment date
 ```
 
-See [Recurring Billing](./recurring-billing.md) for details.
+See [Stellar Payments](../payments/stellar-payments.md) for the recurring payment endpoints.
 
 ## Testnet Guide
 
@@ -160,7 +160,8 @@ curl https://horizon.stellar.org/accounts/YOUR_PUBLIC_KEY
 
 ## See Also
 
-- [Recurring Billing](./recurring-billing.md)
-- [Payment Flow](./payment-flow.md)
-- [Wallet Setup](./wallet-setup.md)
+- [Stellar Payments API](../payments/stellar-payments.md)
+- [Stellar Federation](../platform/federation.md)
+- [Setting up the Stellar wallet (user guide)](../user-guide/stellar-wallet-and-payments.md)
+- [Payments architecture](https://github.com/Health-watchers/health_watchers/blob/main/apps/api/docs/payments-architecture.md)
 - [Stellar Documentation](https://developers.stellar.org/)
