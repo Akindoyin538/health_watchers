@@ -162,12 +162,12 @@ export function AssetDistributionChart({
         </ResponsiveContainer>
         <div className="space-y-3 text-sm">
           <div className="flex items-center gap-2">
-            <span className="h-3 w-3 rounded-full" style={{ background: COLORS.xlm }} />
+            <span className="h-3 w-3 rounded-full bg-[#6366f1]" />
             <span className="text-neutral-600">XLM</span>
             <span className="ml-auto font-medium">{currencyDistribution.xlm.count} txns</span>
           </div>
           <div className="flex items-center gap-2">
-            <span className="h-3 w-3 rounded-full" style={{ background: COLORS.usdc }} />
+            <span className="h-3 w-3 rounded-full bg-[#10b981]" />
             <span className="text-neutral-600">USDC</span>
             <span className="ml-auto font-medium">{currencyDistribution.usdc.count} txns</span>
           </div>
