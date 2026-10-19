@@ -422,3 +422,15 @@ rate(rate_limit_store_errors_total[5m]) > 0
 ```
 
 Alerts for sustained rate limiting are configured in the platform runbooks. Reach out to the on-call engineer if you observe unexpected spikes.
+
+## Per-Resource Rate Limit Keys
+
+Rate limits should combine user identity, tenant, route, and resource identifiers.
+
+Examples:
+
+- `tenant:{tenantId}:patient:{patientId}:read`
+- `tenant:{tenantId}:auth:login`
+- `tenant:{tenantId}:export:create`
+
+Return `429` with retry metadata when limits are exceeded.

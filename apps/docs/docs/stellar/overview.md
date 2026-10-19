@@ -74,7 +74,7 @@ Daily Scheduler
     └─ Update next payment date
 ```
 
-See [Recurring Billing](./recurring-billing.md) for details.
+See [Stellar Payments](../payments/stellar-payments.md) for the recurring payment endpoints.
 
 ## Testnet Guide
 
