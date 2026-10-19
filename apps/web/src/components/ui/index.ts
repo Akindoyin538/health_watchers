@@ -1,4 +1,5 @@
 export { Button, type ButtonProps } from './Button';
+export { ShortcutHelpModal, type ShortcutGroup } from './ShortcutHelpModal';
 export { Input, type InputProps } from './Input';
 export { Select, type SelectProps, type SelectOption } from './Select';
 export { Card, CardHeader, CardTitle, CardContent } from './Card';
@@ -23,3 +24,7 @@ export { Tabs, TabsList, TabsTrigger, TabsContent } from './Tabs';
 export { Textarea, type TextareaProps } from './Textarea';
 export { PasswordInput, type PasswordInputProps } from './PasswordInput';
 export { OtpInput, type OtpInputProps } from './OtpInput';
+// Issue #1221 — Responsive Design System components
+export { ResponsiveContainer } from './ResponsiveContainer';
+export { ResponsiveGrid } from './ResponsiveGrid';
+export { ResponsiveStack } from './ResponsiveStack';

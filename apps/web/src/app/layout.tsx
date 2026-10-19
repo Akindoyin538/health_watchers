@@ -2,14 +2,17 @@ import type { Metadata, Viewport } from 'next';
 import { Inter } from 'next/font/google';
 import { NextIntlClientProvider } from 'next-intl';
 import { getMessages, getLocale } from 'next-intl/server';
-import { ThemeProvider } from 'next-themes';
 import { QueryProvider } from '@/lib/QueryProvider';
 import { AuthProvider } from '@/context/AuthContext';
+import { ThemeProvider } from '@/components/ThemeProvider';
 
 import { Toaster } from '@/components/ui';
 import { ThemeSync } from '@/components/ThemeSync';
 import { OfflineIndicator } from '@/components/OfflineIndicator';
 import { PWAInit } from '@/components/PWAInit';
+import { SessionTimeoutWarning } from '@/components/SessionTimeoutWarning';
+import { CommandPaletteProvider, CommandPalette } from '@/components/CommandPalette';
+import { GlobalHotkeys } from '@/components/GlobalHotkeys';
 import './globals.css';
 
 const inter = Inter({
@@ -94,11 +97,16 @@ export default async function RootLayout({ children }: { children: React.ReactNo
           <NextIntlClientProvider locale={locale} messages={messages}>
             <QueryProvider>
               <AuthProvider>
-                <ThemeSync />
-                <PWAInit />
-                <OfflineIndicator />
-                {children}
-                <Toaster />
+                <CommandPaletteProvider>
+                  <ThemeSync />
+                  <PWAInit />
+                  <OfflineIndicator />
+                  <SessionTimeoutWarning />
+                  <GlobalHotkeys />
+                  <CommandPalette />
+                  {children}
+                  <Toaster />
+                </CommandPaletteProvider>
               </AuthProvider>
             </QueryProvider>
           </NextIntlClientProvider>

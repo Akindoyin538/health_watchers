@@ -68,6 +68,43 @@ export interface Patient {
   updatedAt?: string;
 }
 
+// ─── Runtime Type Guards and API Responses ─────────────────────────────────────
+
+export type JsonPrimitive = string | number | boolean | null;
+export type JsonValue = JsonPrimitive | JsonValue[] | { [key: string]: JsonValue };
+
+export interface ApiErrorDetail {
+  path?: string;
+  message: string;
+}
+
+export interface ApiErrorResponse {
+  error: string;
+  code: ApiErrorCode;
+  message: string;
+  requestId?: string;
+  details?: ApiErrorDetail[];
+  field?: string;
+  stack?: string;
+}
+
+export function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+export function isError(value: unknown): value is Error {
+  return value instanceof Error;
+}
+
+export function isApiErrorResponse(value: unknown): value is ApiErrorResponse {
+  return (
+    isRecord(value) &&
+    typeof value.error === 'string' &&
+    typeof value.code === 'string' &&
+    typeof value.message === 'string'
+  );
+}
+
 // ─── Date Utilities ───────────────────────────────────────────────────────────
 
 /** Format a date string for display (e.g. "Jan 1, 2024"). */
@@ -176,3 +213,61 @@ export enum ApiErrorCode {
   UNSUPPORTED_MEDIA_TYPE = 'UNSUPPORTED_MEDIA_TYPE',
   BAD_REQUEST = 'BAD_REQUEST',
 }
+
+// ─── Staff Management ─────────────────────────────────────────────────────────
+
+/** Roles that can be assigned to clinic staff accounts. */
+export const STAFF_ROLES = [
+  'SUPER_ADMIN',
+  'CLINIC_ADMIN',
+  'DOCTOR',
+  'NURSE',
+  'ASSISTANT',
+  'READ_ONLY',
+] as const;
+
+export type StaffRole = (typeof STAFF_ROLES)[number];
+
+/** Roles a CLINIC_ADMIN may invite or assign; SUPER_ADMIN may assign any role. */
+export const CLINIC_ADMIN_ASSIGNABLE_ROLES: readonly StaffRole[] = [
+  'DOCTOR',
+  'NURSE',
+  'ASSISTANT',
+  'READ_ONLY',
+];
+
+/** Validation for inviting a staff member (web invite form + API POST /users). */
+export const InviteStaffSchema = z.object({
+  fullName: z.string().trim().min(1, 'Full name is required').max(100, 'Full name is too long'),
+  email: z.string().trim().email('Invalid email address'),
+  role: z.enum(STAFF_ROLES),
+  clinicId: z.string().optional(),
+});
+
+export type InviteStaffInput = z.infer<typeof InviteStaffSchema>;
+
+/** Validation for updating a staff member (API PUT /users/:id). */
+export const UpdateStaffSchema = z.object({
+  fullName: z.string().trim().min(1).max(100).optional(),
+  role: z.enum(STAFF_ROLES).optional(),
+});
+
+export type UpdateStaffInput = z.infer<typeof UpdateStaffSchema>;
+
+/** Staff member as returned by GET /users. */
+export interface StaffMember {
+  id: string;
+  fullName: string;
+  email: string;
+  role: StaffRole;
+  clinicId: string;
+  isActive: boolean;
+  emailVerified?: boolean;
+  mfaEnabled?: boolean;
+  createdAt: string;
+  updatedAt?: string;
+}
+
+// ─── Real-time (Socket.IO) Event Contract (Issue #1504) ──────────────────────
+
+export * from './realtime';

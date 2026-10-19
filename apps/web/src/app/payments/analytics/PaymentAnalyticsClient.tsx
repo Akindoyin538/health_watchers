@@ -89,22 +89,57 @@ export default function PaymentAnalyticsClient() {
         <PageHeader title="Payment Analytics" subtitle={`${dateRange.from} → ${dateRange.to}`} />
 
         <div className="flex flex-wrap items-center gap-2">
-          <DateRangeFilter
-            preset={preset}
-            onPresetChange={setPreset}
-            groupBy={groupBy}
-            onGroupByChange={setGroupBy}
-            customRange={customRange}
-            onCustomRangeChange={setCustomRange}
-            clinicId={clinicId}
-            onClinicIdChange={setClinicId}
-            showClinicFilter={showClinicFilter}
+          {/* Clinic filter (SUPER_ADMIN) */}
+          <input
+            type="text"
+            placeholder="Clinic ID (admin only)"
+            value={clinicId}
+            onChange={(e) => setClinicId(e.target.value)}
+            className="rounded-lg border border-neutral-300 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
           />
-          <AnalyticsExportButton
-            dateRange={dateRange}
-            groupBy={groupBy}
-            clinicId={clinicIdOption}
-            analyticsData={data ?? undefined}
+          {/* Date preset */}
+          {(['7d', '30d', '90d', '12m'] as const).map((p) => (
+            <button
+              key={p}
+              onClick={() => setPreset(p)}
+              className={`rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
+                preset === p
+                  ? 'bg-indigo-600 text-white'
+                  : 'border border-neutral-300 bg-white text-neutral-700 hover:bg-neutral-50'
+              }`}
+            >
+              {p}
+            </button>
+          ))}
+          {/* Group by */}
+          <select
+            value={groupBy}
+            onChange={(e) => setGroupBy(e.target.value as GroupBy)}
+            className="rounded-lg border border-neutral-300 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+          >
+            <option value="day">Daily</option>
+            <option value="week">Weekly</option>
+            <option value="month">Monthly</option>
+          </select>
+          {/* CSV export */}
+          <a
+            href={`/api/payments/analytics/export?from=${from}T00:00:00Z&to=${to}T23:59:59Z&groupBy=${groupBy}${clinicId ? `&clinicId=${clinicId}` : ''}`}
+            className="rounded-lg border border-neutral-300 bg-white px-3 py-1.5 text-sm font-medium text-neutral-700 hover:bg-neutral-50"
+          >
+            Export CSV
+          </a>
+        </div>
+      </div>
+
+      {isLoading && (
+        <div
+          role="status"
+          aria-live="polite"
+          className="flex items-center gap-3 py-12 text-neutral-500"
+        >
+          <span
+            className="h-5 w-5 animate-spin rounded-full border-2 border-neutral-300 border-t-neutral-700"
+            aria-hidden="true"
           />
         </div>
       </div>

@@ -7,8 +7,10 @@ const ONBOARDING_PATH = '/onboarding';
 const STAFF_PUBLIC = ['/login', '/forgot-password', '/reset-password', '/mfa'];
 const PORTAL_PUBLIC = ['/portal/login'];
 
-const ADMIN_PATHS = ['/settings', '/reports', '/users'];
+const ADMIN_PATHS = ['/settings', '/reports', '/users', '/billing'];
 const ADMIN_ROLES = ['CLINIC_ADMIN', 'SUPER_ADMIN'];
+/** Admin paths that answer non-admins with a 403 page instead of redirecting home. */
+const FORBIDDEN_ON_DENY = ['/settings/staff'];
 
 function isStaffPublic(pathname: string): boolean {
   return STAFF_PUBLIC.some((path) => pathname === path || pathname.startsWith(`${path}/`));
@@ -78,6 +80,9 @@ export function middleware(request: NextRequest) {
     if (isAdminPath(pathname)) {
       const role = payload?.role as string | undefined;
       if (!role || !ADMIN_ROLES.includes(role)) {
+        if (FORBIDDEN_ON_DENY.some((p) => pathname === p || pathname.startsWith(`${p}/`))) {
+          return NextResponse.rewrite(new URL('/forbidden', request.url), { status: 403 });
+        }
         return NextResponse.redirect(new URL('/', request.url));
       }
     }
