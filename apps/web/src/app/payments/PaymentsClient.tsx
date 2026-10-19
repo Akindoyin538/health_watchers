@@ -20,6 +20,7 @@ import { BatchPaymentsPanel } from '@/components/payments/BatchPaymentsPanel';
 import { PaymentTable, type Payment } from '@/components/payments/PaymentTable';
 import { PaymentIntentForm, type PaymentIntentData } from '@/components/forms/PaymentIntentForm';
 import { Button } from '@/components/ui/Button';
+import { Skeleton, SkeletonTable, SkeletonText } from '@/components/ui/Skeleton';
 import { queryKeys } from '@/lib/queryKeys';
 import { fetchWithAuth } from '@/lib/auth';
 import { API_URL } from '@/lib/api';
@@ -156,9 +157,9 @@ export default function PaymentsClient() {
         <PageHeader title={t('title')} />
         <div className="flex items-center gap-3">
           {polling && (
-            <span className="flex items-center gap-1.5 rounded-full border border-yellow-200 bg-yellow-50 px-3 py-1 text-xs text-yellow-700">
+            <span className="flex items-center gap-1.5 rounded-full border border-yellow-200 bg-yellow-50 px-3 py-1 text-xs text-yellow-700 dark:border-yellow-800 dark:bg-yellow-950 dark:text-yellow-300">
               <span
-                className="h-2 w-2 animate-pulse rounded-full bg-yellow-400"
+                className="h-2 w-2 animate-pulse rounded-full bg-yellow-400 dark:bg-yellow-500"
                 aria-hidden="true"
               />
               {t('polling')}
@@ -173,16 +174,9 @@ export default function PaymentsClient() {
       </div>
 
       {(isLoading || pollingLoading) && !displayPayments.length && (
-        <div
-          role="status"
-          aria-live="polite"
-          className="flex items-center gap-3 py-8 text-neutral-500"
-        >
-          <span
-            className="h-5 w-5 animate-spin rounded-full border-2 border-neutral-300 border-t-neutral-700"
-            aria-hidden="true"
-          />
-          <span>{t('loading')}</span>
+        <div role="status" aria-live="polite" aria-busy="true" className="space-y-3">
+          <span className="sr-only">{t('loading')}</span>
+          <SkeletonTable rows={5} columns={5} />
         </div>
       )}
 
@@ -222,16 +216,9 @@ export default function PaymentsClient() {
 
         <TabsContent value="payments">
           {(isLoading || pollingLoading) && !displayPayments.length && (
-            <div
-              role="status"
-              aria-live="polite"
-              className="flex items-center gap-3 py-8 text-neutral-500"
-            >
-              <span
-                className="h-5 w-5 animate-spin rounded-full border-2 border-neutral-300 border-t-neutral-700"
-                aria-hidden="true"
-              />
-              <span>Loading payments...</span>
+            <div role="status" aria-live="polite" aria-busy="true" className="space-y-3">
+              <span className="sr-only">Loading payments...</span>
+              <SkeletonTable rows={5} columns={5} />
             </div>
           )}
 
