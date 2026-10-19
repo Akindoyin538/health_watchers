@@ -926,29 +926,88 @@ export function streamAccountTransactions(
   return close as () => void;
 }
 
-// ── Multi-Signature Payments (Issue #868) ─────────────────────────────────────
+// ── Multi-Signature Payments (Issue #868, #1594) ───────────────────────────────
+
+/**
+ * A single signer in a multi-sig configuration.
+ * `weight` is the signing weight the signer contributes toward the account
+ * thresholds (0–255). A weight of 0 effectively disables the signer.
+ */
+export interface MultiSigSigner {
+  publicKey: string;
+  weight: number;
+}
+
+/**
+ * Account threshold configuration. A transaction is authorised when the sum of
+ * the weights of all valid signatures meets or exceeds the threshold for the
+ * operation's category (low / medium / high).
+ */
+export interface MultiSigThresholds {
+  low: number;
+  medium: number;
+  high: number;
+}
+
+/**
+ * A multi-sig policy describes who may sign and how many weighted signatures
+ * are required. For an N-of-M scheme, M signers each carry weight 1 and the
+ * threshold equals N.
+ */
+export interface MultiSigPolicy {
+  signers: MultiSigSigner[];
+  thresholds: MultiSigThresholds;
+}
 
 export interface MultiSigPaymentParams {
   fromPublicKey: string;
   toPublicKey: string;
   amount: string;
   signerPublicKeys: string[];
+  /** Optional asset; defaults to native XLM. */
+  assetCode?: string;
+  assetIssuer?: string;
+  /** Optional memo (text, truncated to 28 bytes). */
+  memo?: string;
+  /** Transaction timeout in seconds (defaults to 300). */
+  timeoutSeconds?: number;
 }
 
-/**
- * Build a multi-signature payment transaction XDR.
- * Returns an unsigned envelope that must be signed by all required co-signers
- * before submission. The source account must have its thresholds configured
- * to require the signers listed.
- */
-export async function buildMultiSigTransaction(params: MultiSigPaymentParams): Promise<{
+export interface MultiSigBuildResult {
   xdr: string;
   hash: string;
   signerPublicKeys: string[];
   networkPassphrase: string;
-}> {
-  const { fromPublicKey, toPublicKey, amount, signerPublicKeys } = params;
+  /** Weighted threshold that must be met for the payment operation. */
+  requiredThreshold: number;
+  /** Total weight available across all configured signers. */
+  totalWeight: number;
+}
+
+/**
+ * Build a multi-signature payment transaction XDR.
+ * Returns an unsigned envelope that must be signed by the required co-signers
+ * before submission. The source account must have its thresholds configured
+ * to require the signers listed (see {@link buildSetOptionsTransaction}).
+ */
+export async function buildMultiSigTransaction(
+  params: MultiSigPaymentParams
+): Promise<MultiSigBuildResult> {
+  const {
+    fromPublicKey,
+    toPublicKey,
+    amount,
+    signerPublicKeys,
+    assetCode,
+    assetIssuer,
+    memo,
+    timeoutSeconds = 300,
+  } = params;
   assertTransactionLimit(parseFloat(amount));
+
+  if (!signerPublicKeys.length) {
+    throw new Error('At least one co-signer public key is required');
+  }
 
   const start = Date.now();
   logger.info(
@@ -969,35 +1028,54 @@ export async function buildMultiSigTransaction(params: MultiSigPaymentParams): P
     );
     const fee = await withHorizonCall('fetchBaseFee', {}, () => server.fetchBaseFee());
 
-    const transaction = new TransactionBuilder(account, {
+    const asset =
+      assetCode && assetCode !== 'XLM' ? new Asset(assetCode, assetIssuer!) : Asset.native();
+
+    const builder = new TransactionBuilder(account, {
       fee: String(fee),
       networkPassphrase: getNetworkPassphrase(),
-    })
-      .addOperation(
-        Operation.payment({
-          destination: toPublicKey,
-          asset: Asset.native(),
-          amount,
-        })
-      )
-      .setTimeout(300)
-      .build();
+    }).addOperation(
+      Operation.payment({
+        destination: toPublicKey,
+        asset,
+        amount,
+      })
+    );
+
+    if (memo) {
+      builder.addMemo({ type: 'text', value: memo.slice(0, 28) } as any);
+    }
+
+    const transaction = builder.setTimeout(timeoutSeconds).build();
 
     const xdr = transaction.toXDR();
     const hash = transaction.hash().toString('hex');
+
+    // Derive the required threshold from the on-chain account configuration so
+    // callers know how much signing weight still needs to be gathered.
+    const { requiredThreshold, totalWeight } = resolveAccountThresholds(account, signerPublicKeys);
 
     logger.info(
       {
         operation: 'buildMultiSigTransaction',
         hash,
         signerCount: signerPublicKeys.length,
+        requiredThreshold,
+        totalWeight,
         outcome: 'success',
         durationMs: Date.now() - start,
       },
       'Multi-sig transaction built'
     );
 
-    return { xdr, hash, signerPublicKeys, networkPassphrase: getNetworkPassphrase() };
+    return {
+      xdr,
+      hash,
+      signerPublicKeys,
+      networkPassphrase: getNetworkPassphrase(),
+      requiredThreshold,
+      totalWeight,
+    };
   } catch (error) {
     logger.error(
       {
@@ -1013,8 +1091,34 @@ export async function buildMultiSigTransaction(params: MultiSigPaymentParams): P
 }
 
 /**
+ * Determine the medium threshold (payments are medium-threshold operations) and
+ * the total signing weight available for the given signer set. Falls back to a
+ * simple N-of-N interpretation when the account has no explicit thresholds.
+ */
+function resolveAccountThresholds(
+  account: Horizon.ServerApi.AccountRecord,
+  signerPublicKeys: string[]
+): { requiredThreshold: number; totalWeight: number } {
+  const thresholds = (account as any).thresholds;
+  const medium = thresholds?.med_threshold ?? signerPublicKeys.length;
+
+  const signerWeights = new Map<string, number>();
+  for (const s of (account as any).signers ?? []) {
+    signerWeights.set(s.key, s.weight ?? 0);
+  }
+
+  let totalWeight = 0;
+  for (const pk of signerPublicKeys) {
+    totalWeight += signerWeights.get(pk) ?? 1;
+  }
+
+  return { requiredThreshold: medium, totalWeight };
+}
+
+/**
  * Add a signature from a co-signer to an existing transaction XDR.
- * Returns the updated XDR with the new signature appended.
+ * Returns the updated XDR with the new signature appended. Signing the same
+ * XDR twice with the same key is idempotent (the SDK replaces the signature).
  */
 export function addCoSignerSignature(
   xdr: string,
@@ -1027,15 +1131,66 @@ export function addCoSignerSignature(
 }
 
 /**
- * Submit a fully-signed multi-sig transaction XDR to Horizon.
+ * Merge signatures from multiple signed envelopes into a single XDR.
+ * Useful when co-signers sign independently and their signatures must be
+ * combined before submission. Duplicate signatures are de-duplicated by the SDK.
  */
-export async function submitMultiSigTransaction(xdr: string): Promise<{ hash: string }> {
+export function mergeMultiSigSignatures(signedXdrs: string[]): { xdr: string; hash: string } {
+  if (!signedXdrs.length) {
+    throw new Error('At least one signed XDR is required to merge signatures');
+  }
+
+  const networkPassphrase = getNetworkPassphrase();
+  const base = new Transaction(signedXdrs[0], networkPassphrase);
+
+  for (const signedXdr of signedXdrs.slice(1)) {
+    const other = new Transaction(signedXdr, networkPassphrase);
+    for (const signature of other.signatures) {
+      base.addSignature(signature.publicKey(), signature.signature());
+    }
+  }
+
+  return { xdr: base.toXDR(), hash: base.hash().toString('hex') };
+}
+
+/**
+ * Count the number of distinct signatures currently attached to an XDR.
+ */
+export function countSignatures(xdr: string): number {
+  const transaction = new Transaction(xdr, getNetworkPassphrase());
+  return transaction.signatures.length;
+}
+
+/**
+ * Check whether an XDR has gathered enough signatures to meet the required
+ * threshold. This is a best-effort check based on signature count; the
+ * authoritative check is performed by Horizon on submission.
+ */
+export function hasMetThreshold(xdr: string, requiredThreshold: number): boolean {
+  return countSignatures(xdr) >= requiredThreshold;
+}
+
+/**
+ * Submit a fully-signed multi-sig transaction XDR to Horizon.
+ * Throws if the envelope does not carry enough signatures to meet the
+ * required threshold (when provided).
+ */
+export async function submitMultiSigTransaction(
+  xdr: string,
+  requiredThreshold?: number
+): Promise<{ hash: string }> {
   const start = Date.now();
   logger.info({ operation: 'submitMultiSigTransaction' }, 'Submitting multi-sig transaction');
 
   try {
     const server = getHorizonServer();
     const transaction = new Transaction(xdr, getNetworkPassphrase());
+
+    if (requiredThreshold !== undefined && !hasMetThreshold(xdr, requiredThreshold)) {
+      throw new Error(
+        `Insufficient signatures: have ${countSignatures(xdr)}, need ${requiredThreshold}`
+      );
+    }
 
     if (stellarConfig.dryRun) {
       const hash = transaction.hash().toString('hex');
@@ -1082,6 +1237,125 @@ export async function submitMultiSigTransaction(xdr: string): Promise<{ hash: st
     );
     throw error;
   }
+}
+
+/**
+ * Build a `setOptions` transaction that configures an account for multi-sig:
+ * adds each signer with its weight and sets the low/medium/high thresholds.
+ * The transaction is signed by the platform keypair (which must be a signer on
+ * the account) and submitted unless running in dry-run mode.
+ */
+export async function buildSetOptionsTransaction(
+  accountPublicKey: string,
+  policy: MultiSigPolicy
+): Promise<{ xdr: string; hash: string; dryRun: boolean }> {
+  const start = Date.now();
+  logger.info(
+    {
+      operation: 'buildSetOptionsTransaction',
+      accountPublicKey,
+      signerCount: policy.signers.length,
+      thresholds: policy.thresholds,
+    },
+    'Building multi-sig setOptions transaction'
+  );
+
+  try {
+    const server = getHorizonServer();
+    const account = await withHorizonCall('loadAccount', { publicKey: accountPublicKey }, () =>
+      server.loadAccount(accountPublicKey)
+    );
+    const fee = await withHorizonCall('fetchBaseFee', {}, () => server.fetchBaseFee());
+
+    const transaction = new TransactionBuilder(account, {
+      fee: String(fee),
+      networkPassphrase: getNetworkPassphrase(),
+    })
+      .addOperation(
+        Operation.setOptions({
+          signer: policy.signers.map((s) => ({
+            ed25519PublicKey: s.publicKey,
+            weight: s.weight,
+          })),
+          lowThreshold: policy.thresholds.low,
+          medThreshold: policy.thresholds.medium,
+          highThreshold: policy.thresholds.high,
+        })
+      )
+      .setTimeout(300)
+      .build();
+
+    const platformKeypair = Keypair.fromSecret(stellarConfig.stellarSecretKey);
+    transaction.sign(platformKeypair);
+
+    const xdr = transaction.toXDR();
+    const hash = transaction.hash().toString('hex');
+
+    if (stellarConfig.dryRun) {
+      logger.info(
+        {
+          operation: 'buildSetOptionsTransaction',
+          accountPublicKey,
+          hash,
+          outcome: 'success',
+          dryRun: true,
+          durationMs: Date.now() - start,
+        },
+        'Multi-sig setOptions transaction built (dry run)'
+      );
+      return { xdr, hash, dryRun: true };
+    }
+
+    const result = await withHorizonCall(
+      'submitTransaction',
+      { operation: 'buildSetOptionsTransaction', accountPublicKey },
+      () => server.submitTransaction(transaction)
+    );
+
+    logger.info(
+      {
+        operation: 'buildSetOptionsTransaction',
+        accountPublicKey,
+        hash: result.hash,
+        outcome: 'success',
+        durationMs: Date.now() - start,
+      },
+      'Multi-sig setOptions transaction submitted'
+    );
+    return { xdr, hash: result.hash, dryRun: false };
+  } catch (error) {
+    logger.error(
+      {
+        operation: 'buildSetOptionsTransaction',
+        accountPublicKey,
+        outcome: 'failure',
+        durationMs: Date.now() - start,
+        error: toErrorContext(error),
+      },
+      'Failed to build multi-sig setOptions transaction'
+    );
+    throw error;
+  }
+}
+
+/**
+ * Convenience helper to configure an N-of-M multi-sig policy where each of the
+ * M signers carries weight 1 and the medium/high thresholds require N signatures.
+ */
+export function buildNOfMPolicy(signerPublicKeys: string[], requiredSignatures: number): MultiSigPolicy {
+  if (requiredSignatures < 1 || requiredSignatures > signerPublicKeys.length) {
+    throw new Error(
+      `Invalid threshold ${requiredSignatures} for ${signerPublicKeys.length} signers`
+    );
+  }
+  return {
+    signers: signerPublicKeys.map((publicKey) => ({ publicKey, weight: 1 })),
+    thresholds: {
+      low: 1,
+      medium: requiredSignatures,
+      high: requiredSignatures,
+    },
+  };
 }
 
 // ── Batch Payment Processing (Issue #869) ─────────────────────────────────────
