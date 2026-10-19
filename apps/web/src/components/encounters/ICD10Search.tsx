@@ -75,36 +75,23 @@ export default function ICD10Search({
     <div>
       {/* Selected diagnoses */}
       {selected.length > 0 && (
-        <ul style={{ listStyle: 'none', padding: 0, marginBottom: '0.5rem' }}>
+        <ul className="mb-2 list-none p-0">
           {selected.map((s) => (
             <li
               key={s.code}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '0.5rem',
-                padding: '0.3rem 0.5rem',
-                background: '#f0f9ff',
-                borderRadius: 4,
-                marginBottom: '0.25rem',
-                fontSize: '0.85rem',
-              }}
+              className="mb-1 flex items-center gap-2 rounded bg-blue-50 px-2 py-1.5 text-sm"
             >
-              <span style={{ fontWeight: 600 }}>{s.code}</span>
-              <span style={{ flex: 1 }}>{s.description}</span>
+              <span className="font-semibold">{s.code}</span>
+              <span className="flex-1">{s.description}</span>
               <button
                 type="button"
                 onClick={() => togglePrimary(s.code)}
                 title={s.isPrimary ? 'Primary diagnosis' : 'Set as primary'}
-                style={{
-                  fontSize: '0.7rem',
-                  padding: '0.1rem 0.4rem',
-                  background: s.isPrimary ? '#2563eb' : '#e5e7eb',
-                  color: s.isPrimary ? '#fff' : '#374151',
-                  border: 'none',
-                  borderRadius: 3,
-                  cursor: 'pointer',
-                }}
+                className={`cursor-pointer rounded border-0 px-2 py-0.5 text-xs ${
+                  s.isPrimary
+                    ? 'bg-blue-600 text-white'
+                    : 'bg-neutral-200 text-neutral-700'
+                }`}
               >
                 {s.isPrimary ? '★ Primary' : 'Set primary'}
               </button>
@@ -112,13 +99,7 @@ export default function ICD10Search({
                 type="button"
                 onClick={() => remove(s.code)}
                 aria-label={`Remove ${s.code}`}
-                style={{
-                  background: 'none',
-                  border: 'none',
-                  cursor: 'pointer',
-                  color: '#ef4444',
-                  fontWeight: 700,
-                }}
+                className="cursor-pointer border-0 bg-transparent font-bold text-red-500"
               >
                 ×
               </button>
@@ -128,7 +109,7 @@ export default function ICD10Search({
       )}
 
       {/* Search input */}
-      <div style={{ position: 'relative' }}>
+      <div className="relative">
         <input
           type="text"
           value={query}
@@ -138,26 +119,10 @@ export default function ICD10Search({
           }}
           placeholder="Search ICD-10 code or description (e.g. J06 or respiratory)"
           aria-label="Search ICD-10 diagnosis codes"
-          style={{
-            width: '100%',
-            padding: '0.5rem 0.75rem',
-            border: '1px solid #d1d5db',
-            borderRadius: 6,
-            fontSize: '0.875rem',
-            boxSizing: 'border-box',
-          }}
+          className="w-full rounded-md border border-neutral-300 px-3 py-2 text-sm"
         />
         {loading && (
-          <span
-            style={{
-              position: 'absolute',
-              right: '0.75rem',
-              top: '50%',
-              transform: 'translateY(-50%)',
-              fontSize: '0.75rem',
-              color: '#6b7280',
-            }}
-          >
+          <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-neutral-500">
             Searching…
           </span>
         )}
@@ -168,33 +133,16 @@ export default function ICD10Search({
         <ul
           role="listbox"
           aria-label="ICD-10 search results"
-          style={{
-            listStyle: 'none',
-            padding: 0,
-            margin: '0.25rem 0 0',
-            border: '1px solid #d1d5db',
-            borderRadius: 6,
-            background: '#fff',
-            maxHeight: 240,
-            overflowY: 'auto',
-            boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)',
-          }}
+          className="mt-1 max-h-60 list-none overflow-y-auto rounded-md border border-neutral-300 bg-white p-0 shadow-md"
         >
           {results.map((r) => (
             <li
               key={r.code}
               role="option"
               onClick={() => add(r)}
-              style={{
-                padding: '0.5rem 0.75rem',
-                cursor: 'pointer',
-                borderBottom: '1px solid #f3f4f6',
-                fontSize: '0.85rem',
-              }}
-              onMouseEnter={(e) => (e.currentTarget.style.background = '#f0f9ff')}
-              onMouseLeave={(e) => (e.currentTarget.style.background = '#fff')}
+              className="cursor-pointer border-b border-neutral-100 px-3 py-2 text-sm hover:bg-blue-50"
             >
-              <span style={{ fontWeight: 600, marginRight: '0.5rem' }}>{r.code}</span>
+              <span className="mr-2 font-semibold">{r.code}</span>
               {r.description}
             </li>
           ))}
