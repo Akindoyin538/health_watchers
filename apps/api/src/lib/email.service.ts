@@ -85,6 +85,23 @@ function buildWelcomeEmail(name: string, language?: string): EmailContent {
   };
 }
 
+function buildClinicOnboardingCompleteEmail(clinicName: string, language?: string): EmailContent {
+  const dashboardUrl = `${APP_BASE_URL()}/dashboard`;
+  if (resolveLanguage(language) === 'fr') {
+    return {
+      subject: 'Configuration de votre clinique terminée — Health Watchers',
+      text: `Bonjour ${clinicName},\n\nFélicitations ! La configuration de votre clinique sur Health Watchers est terminée. Vous pouvez maintenant accéder à votre tableau de bord : ${dashboardUrl}`,
+      html: `<h3>Configuration de votre clinique terminée</h3><p>Bonjour <strong>${clinicName}</strong>,</p><p>Félicitations ! La configuration de votre clinique sur Health Watchers est terminée. Vous pouvez maintenant commencer à gérer vos patients et vos paiements.</p><p><a href="${dashboardUrl}">Accéder au tableau de bord</a></p>`,
+    };
+  }
+
+  return {
+    subject: 'Your Clinic Onboarding Is Complete — Health Watchers',
+    text: `Hi ${clinicName},\n\nCongratulations! Your clinic's onboarding on Health Watchers is complete. You can now access your dashboard: ${dashboardUrl}`,
+    html: `<h3>Your Clinic Onboarding Is Complete</h3><p>Hi <strong>${clinicName}</strong>,</p><p>Congratulations! Your clinic's onboarding on Health Watchers is complete. You can now start managing your patients and payments.</p><p><a href="${dashboardUrl}">Go to Dashboard</a></p>`,
+  };
+}
+
 function buildPasswordResetEmail(token: string, language?: string): EmailContent {
   const resetUrl = `${APP_BASE_URL()}/reset-password?token=${token}`;
   if (resolveLanguage(language) === 'fr') {
@@ -208,6 +225,21 @@ export function sendVerificationEmail(to: string, token: string, language?: stri
 
 export function sendWelcomeEmail(to: string, name: string, language?: string): void {
   const rendered = renderTemplate('welcome', language, buildWelcomeEmail, name, language);
+  enqueue(to, rendered.subject, rendered.text, rendered.html);
+}
+
+export function sendClinicOnboardingCompleteEmail(
+  to: string,
+  clinicName: string,
+  language?: string
+): void {
+  const rendered = renderTemplate(
+    'clinicOnboardingComplete',
+    language,
+    buildClinicOnboardingCompleteEmail,
+    clinicName,
+    language
+  );
   enqueue(to, rendered.subject, rendered.text, rendered.html);
 }
 

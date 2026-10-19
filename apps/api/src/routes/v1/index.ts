@@ -79,7 +79,7 @@ import providerSchedulingRoutes from '../../modules/provider-scheduling/provider
 import cdsRoutes from '../../modules/cds/cds.controller';
 import interactionRoutes from '../../modules/interactions/interaction.controller';
 import { telehealthRoutes } from '../../modules/telehealth/telehealth.controller';
-import { preAuthRoutes } from '../../modules/pre-auth/pre-auth.controller';
+import { preAuthRoutes, preAuthBulkRoutes } from '../../modules/pre-auth/pre-auth.controller';
 import peerReviewsRouter from '../../modules/peer-reviews/peer-reviews.router';
 import { surveyRoutes } from '../../modules/surveys/surveys.controller';
 import { inboxRoutes } from '../../modules/inbox/inbox.controller';
@@ -190,6 +190,8 @@ v1Router.use('/interactions', interactionRoutes);
 // consent-gated recording, transcription, in-meeting chat and archive.
 v1Router.use('/telehealth', telehealthRoutes);
 v1Router.use('/pre-auth', paymentLimiter, preAuthRoutes);
+// #1606 — Bulk pre-authorization submission (submit multiple requests at once)
+v1Router.use('/pre-auth', paymentLimiter, preAuthBulkRoutes);
 v1Router.use('/peer-reviews', peerReviewsRouter);
 v1Router.use('/surveys', surveyRoutes);
 v1Router.use('/inbox', inboxRoutes);
@@ -223,6 +225,8 @@ v1Router.use('/exports/schedules', exportScheduleRouter);
 v1Router.use('/clinics', clinicRoutes);
 v1Router.use('/settings', clinicSettingsRoutes);
 v1Router.use('/onboarding', onboardingRoutes);
+// #1603 — Admin onboarding reset (support tooling) is exposed by onboardingRoutes
+// at /onboarding/admin/reset; mounted here under the admin group.
 v1Router.use('/api-keys', apiKeyRoutes);
 v1Router.use('/webhooks', webhookRoutes);
 v1Router.use('/audit', auditRoutes);
