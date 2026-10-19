@@ -48,11 +48,11 @@ const sidebars: SidebarsConfig = {
       label: 'Payments',
       items: [
         'stellar/overview',
-        'payments/stellar-payments',
-        'payments/billing',
-        'payments/invoices',
-        'payments/subscriptions',
-        'payments/pre-auth',
+        'stellar/payment-flow',
+        'stellar/payment-lifecycle',
+        'stellar/wallet-setup',
+        'stellar/testnet-guide',
+        'stellar/recurring-billing',
       ],
     },
     {

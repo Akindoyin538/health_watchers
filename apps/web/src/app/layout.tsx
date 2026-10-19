@@ -93,7 +93,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   return (
     <html lang={locale} className={inter.variable} suppressHydrationWarning>
       <body className="min-h-screen bg-neutral-50 font-sans antialiased dark:bg-neutral-900">
-        <ThemeProvider>
+        <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
           <NextIntlClientProvider locale={locale} messages={messages}>
             <QueryProvider>
               <AuthProvider>
