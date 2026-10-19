@@ -1050,27 +1050,64 @@ app.post('/multi-sig/submit', requireSecret, checkCircuitBreakerMiddleware, asyn
   }
 });
 
-// ✅ PROTECTED: POST /batch — submit a batch of payments in a single transaction
+// ✅ PROTECTED: POST /batch — enqueue a batch of payments for async processing
+// Returns a jobId plus the accepted payments so callers can poll GET /batch/:jobId.
 app.post('/batch', requireSecret, checkCircuitBreakerMiddleware, async (req, res) => {
+  const requestId = (req.headers['x-request-id'] as string) ?? undefined;
   try {
     const { fromPublicKey, payments } = req.body;
     if (!fromPublicKey || !Array.isArray(payments) || !payments.length) {
-      return res.status(400).json({ error: 'fromPublicKey and payments[] are required' });
+      return res
+        .status(400)
+        .json({ error: 'fromPublicKey and payments[] are required', requestId });
     }
     if (payments.length > 100) {
-      return res.status(400).json({ error: 'Batch size cannot exceed 100 payments' });
+      return res
+        .status(400)
+        .json({ error: 'Batch size cannot exceed 100 payments', requestId });
     }
-    const result = await retryWithBackoff(
-      () => processBatchPayments(fromPublicKey, payments),
-      3,
-      1000
-    );
+    const result = await batchProcessor.enqueue(fromPublicKey, payments);
     recordSuccess();
-    return res.json({ success: true, ...result });
+    return res.json({ success: true, requestId, ...result });
   } catch (error: any) {
     recordFailure();
-    const horizonError = parseHorizonError(error);
-    return res.status(horizonError.statusCode).json(horizonError);
+    logger.error({ error: error.message, requestId }, 'Failed to enqueue batch');
+    return res.status(400).json({ error: error.message, requestId });
+  }
+});
+
+// ✅ PROTECTED: GET /batch/:jobId — batch job status with partial-success breakdown
+app.get('/batch/:jobId', requireSecret, (req, res) => {
+  const requestId = (req.headers['x-request-id'] as string) ?? undefined;
+  try {
+    const { jobId } = req.params;
+    const job = batchProcessor.getJob(jobId);
+    if (!job) {
+      return res.status(404).json({ error: `Batch job not found: ${jobId}`, requestId });
+    }
+    return res.json({ success: true, requestId, job });
+  } catch (error: any) {
+    return res.status(500).json({ error: error.message, requestId });
+  }
+});
+
+// ✅ PROTECTED: POST /batch/:jobId/cancel — cancel a batch before submission
+app.post('/batch/:jobId/cancel', requireSecret, (req, res) => {
+  const requestId = (req.headers['x-request-id'] as string) ?? undefined;
+  try {
+    const { jobId } = req.params;
+    const cancelled = batchProcessor.cancel(jobId);
+    if (!cancelled) {
+      return res.status(409).json({
+        error: `Batch job cannot be cancelled (not found or already submitted): ${jobId}`,
+        requestId,
+      });
+    }
+    recordSuccess();
+    return res.json({ success: true, requestId, jobId, message: 'Batch job cancelled' });
+  } catch (error: any) {
+    recordFailure();
+    return res.status(500).json({ error: error.message, requestId });
   }
 });
 
