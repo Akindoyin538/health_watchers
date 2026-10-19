@@ -18,7 +18,7 @@
  * │                 │ HL7 v2 (patients/:id/hl7v2)                      │
  * │ admin           │ /clinics, /onboarding, /settings, /api-keys,    │
  * │                 │ /webhooks, /compliance, /breach-incidents,       │
- * │                 │ /audit, /audit-logs, /notifications,             │
+ * │                 │ /audit, /notifications,                          │
  * │                 │ /documents, /security/csp-report                 │
  * │ infrastructure  │ /cdn, /replication                              │
  * │ system          │ /metrics, /federation (well-known), /health      │
@@ -46,11 +46,13 @@ import { userManagementRoutes } from '../../modules/users/user-management.contro
 
 // ── Clinical ──────────────────────────────────────────────────────────────────
 import { deprecated, V1_SUNSET_DATE } from '../../middlewares/api-versioning.middleware';
-import { patientRoutes } from '../../modules/patients/patients.controller';
+import patientRoutes from '../../modules/patients/patients.routes';
 import { medicalHistoryRoutes } from '../../modules/patients/medical-history.controller';
 import { patientPhotoRoutes } from '../../modules/patients/photo.controller';
 import { encounterRoutes } from '../../modules/encounters/encounters.controller';
 import { encounterTemplateRoutes } from '../../modules/encounters/encounter-templates.controller';
+import { encounterOutcomeRoutes } from '../../modules/encounters/encounter-outcomes.controller';
+import { encounterTranscriptionRoutes } from '../../modules/encounters/encounter-transcription.controller';
 import { appointmentRoutes } from '../../modules/appointments/appointments.controller';
 import { waitlistRoutes } from '../../modules/appointments/waitlist.controller';
 import { labResultRoutes } from '../../modules/lab-results/lab-results.controller';
@@ -99,7 +101,6 @@ import { clinicSettingsRoutes } from '../../modules/clinics/clinic-settings.cont
 import onboardingRoutes from '../../modules/clinics/onboarding.routes';
 import apiKeyRoutes from '../../modules/api-keys/api-keys.routes';
 import { webhookRoutes } from '../../modules/webhooks/webhooks.controller';
-import { auditLogRoutes } from '../../modules/audit/audit-logs.controller';
 import { auditRoutes } from '../../modules/audit/audit.controller';
 import { documentRoutes } from '../../modules/documents/documents.controller';
 import { documentManagementRoutes } from '../../modules/documents/documents-management.controller';
@@ -155,6 +156,12 @@ v1Router.use('/patients/:id/immunizations', immunizationRoutes);
 v1Router.use('/encounters', encounterRoutes);
 // Lazy-load sub-routes (#1427) — on-demand relation loading for encounters
 v1Router.use('/encounters', encounterLazyLoadRouter);
+// #1591 — Encounter outcome tracking: outcome recording, outcomes summary
+// aggregation for the dashboard and the follow-up reminder queue.
+v1Router.use('/encounters', encounterOutcomeRoutes);
+// #1592 — AI voice transcription: audio upload (multipart), async job status
+// and the review/edit step that persists corrected SOAP fields.
+v1Router.use('/encounters', encounterTranscriptionRoutes);
 v1Router.use('/encounter-templates', encounterTemplateRoutes);
 v1Router.use('/appointments', appointmentRoutes);
 v1Router.use('/waitlist', waitlistRoutes);
@@ -218,7 +225,6 @@ v1Router.use('/settings', clinicSettingsRoutes);
 v1Router.use('/onboarding', onboardingRoutes);
 v1Router.use('/api-keys', apiKeyRoutes);
 v1Router.use('/webhooks', webhookRoutes);
-v1Router.use('/audit-logs', auditLogRoutes);
 v1Router.use('/audit', auditRoutes);
 v1Router.use('/documents', documentRoutes);
 v1Router.use('/documents', documentManagementRoutes);

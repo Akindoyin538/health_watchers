@@ -75,86 +75,89 @@ function convertToPostman(openapiSpec) {
   }
 }
 
-// ── 3. Augment collection with headers/params not always emitted by converter ─
-// The OpenAPI → Postman converter does not reliably emit custom headers or
-// cursor query params, so we inject them explicitly to keep the generated
-// collection in sync with the spec.
-const PAYMENT_POST_PATHS = ['/payments', '/payments/batch', '/payments/recurring'];
-const INBOUND_WEBHOOK_PATH = '/webhooks/inbound';
-const AUDIT_LOG_PATH = '/audit-logs';
+// ── 3. Pagination schema helpers ──────────────────────────────────────────────
+// List endpoints that must expose the standardized pagination query params.
+const PAGINATED_FOLDERS = [
+  'Patients',
+  'Encounters',
+  'Payments',
+  'Invoices',
+  'Appointments',
+  'Notifications',
+  'Communications',
+];
 
-function normalizePath(rawPath) {
-  if (!rawPath) return '';
-  // Postman paths look like "{{baseUrl}}/payments" or "/payments"
-  return rawPath.replace(/^\{\{[^}]+\}\}/, '').replace(/\/+$/, '') || '/';
+// Query params every paginated list endpoint must document.
+const REQUIRED_QUERY_PARAMS = ['page', 'limit', 'sort', 'cursor'];
+
+// Recursively collect all requests (items with a `request`) from a folder tree.
+function collectRequests(items, acc = []) {
+  for (const item of items || []) {
+    if (item.request) {
+      acc.push(item);
+    }
+    if (Array.isArray(item.item)) {
+      collectRequests(item.item, acc);
+    }
+  }
+  return acc;
 }
 
-function ensureHeader(request, key, value, description) {
-  request.header = request.header || [];
-  if (request.header.some((h) => (h.key || '').toLowerCase() === key.toLowerCase())) {
-    return;
+// Extract query param keys from a Postman request URL (string or object form).
+function getQueryParamKeys(request) {
+  const url = request && request.url;
+  if (!url) return [];
+  if (typeof url === 'string') {
+    const qs = url.split('?')[1] || '';
+    return qs
+      .split('&')
+      .filter(Boolean)
+      .map((pair) => decodeURIComponent(pair.split('=')[0]));
   }
-  request.header.push({ key, value, description, type: 'text' });
+  if (Array.isArray(url.query)) {
+    return url.query.map((q) => q.key);
+  }
+  return [];
 }
 
-function ensureQueryParam(request, key, value, description) {
-  request.url = request.url || {};
-  if (typeof request.url === 'string') {
-    request.url = { raw: request.url };
-  }
-  request.url.query = request.url.query || [];
-  if (request.url.query.some((q) => (q.key || '').toLowerCase() === key.toLowerCase())) {
-    return;
-  }
-  request.url.query.push({ key, value, description, disabled: true });
-}
-
-function walkItems(items, visit) {
-  (items || []).forEach((item) => {
-    if (item.item) {
-      walkItems(item.item, visit);
-    } else if (item.request) {
-      visit(item);
+// Check whether a request's example response body uses the { data, pagination } shape.
+function hasStandardPaginationShape(request) {
+  const responses = (request && request.response) || [];
+  return responses.some((res) => {
+    const body = res && res.body;
+    if (typeof body !== 'string') return false;
+    try {
+      const parsed = JSON.parse(body);
+      return (
+        parsed &&
+        typeof parsed === 'object' &&
+        Array.isArray(parsed.data) &&
+        parsed.pagination &&
+        typeof parsed.pagination === 'object' &&
+        'total' in parsed.pagination &&
+        'page' in parsed.pagination &&
+        'limit' in parsed.pagination &&
+        'hasMore' in parsed.pagination
+      );
+    } catch {
+      return false;
     }
   });
 }
 
-function augmentCollection(collection) {
-  walkItems(collection.item, (item) => {
-    const request = item.request;
-    const method = (request.method || 'GET').toUpperCase();
-    const rawUrl = typeof request.url === 'string' ? request.url : request.url && request.url.raw;
-    const pathname = normalizePath(rawUrl);
-
-    if (method === 'POST' && PAYMENT_POST_PATHS.includes(pathname)) {
-      ensureHeader(
-        request,
-        'Idempotency-Key',
-        '{{$guid}}',
-        'Unique key to make payment creation idempotent (24h TTL).'
-      );
-    }
-
-    if (method === 'POST' && pathname === INBOUND_WEBHOOK_PATH) {
-      ensureHeader(
-        request,
-        'X-Webhook-Signature',
-        '{{webhookSignature}}',
-        'HMAC-SHA256 signature of the raw request body.'
-      );
-    }
-
-    if (method === 'GET' && pathname === AUDIT_LOG_PATH) {
-      ensureQueryParam(request, 'after', '{{afterCursor}}', 'Return entries after this cursor (_id).');
-      ensureQueryParam(request, 'before', '{{beforeCursor}}', 'Return entries before this cursor (_id).');
-    }
-  });
-  return collection;
-}
-
-// ── 4. Validate collection covers required folders ────────────────────────────
+// ── 4. Validate collection covers required folders & pagination schema ────────
 function validateCollection(collection) {
-  const required = ['Auth', 'Patients', 'Encounters', 'Payments'];
+  const required = [
+    'Auth',
+    'Patients',
+    'Encounters',
+    'Payments',
+    'Invoices',
+    'Appointments',
+    'Notifications',
+    'Communications',
+    'Attachments',
+  ];
   const folders = (collection.item || []).map((i) => i.name);
   const missing = required.filter(
     (r) => !folders.some((f) => f.toLowerCase().includes(r.toLowerCase()))
@@ -165,7 +168,45 @@ function validateCollection(collection) {
     process.exit(1);
   }
 
+  // Validate pagination query params + response shape on paginated list folders.
+  const errors = [];
+  for (const folderName of PAGINATED_FOLDERS) {
+    const folder = (collection.item || []).find((f) =>
+      f.name.toLowerCase().includes(folderName.toLowerCase())
+    );
+    if (!folder) continue; // already reported as missing above
+
+    const requests = collectRequests(folder.item);
+    if (requests.length === 0) {
+      errors.push(`${folderName}: no requests found`);
+      continue;
+    }
+
+    for (const req of requests) {
+      const label = `${folderName} › ${req.name || '(unnamed request)'}`;
+      const paramKeys = getQueryParamKeys(req.request).map((k) => k.toLowerCase());
+      const missingParams = REQUIRED_QUERY_PARAMS.filter(
+        (p) => !paramKeys.includes(p)
+      );
+      if (missingParams.length > 0) {
+        errors.push(`${label}: missing query params [${missingParams.join(', ')}]`);
+      }
+      if (!hasStandardPaginationShape(req.request)) {
+        errors.push(`${label}: response example missing { data, pagination } shape`);
+      }
+    }
+  }
+
+  if (errors.length > 0) {
+    console.error('❌ Pagination schema validation failed:');
+    errors.forEach((e) => console.error(`   - ${e}`));
+    process.exit(1);
+  }
+
   console.log(`✅ Collection validated — folders present: ${folders.join(', ')}`);
+  console.log(
+    `✅ Pagination schema validated for: ${PAGINATED_FOLDERS.join(', ')}`
+  );
 }
 
 // ── Main ──────────────────────────────────────────────────────────────────────

@@ -147,10 +147,13 @@ app.use(
 );
 
 // ── Request ID correlation & propagation ──────────────────────────────────────
-// correlationMiddleware: stamps req.requestId and echoes X-Request-ID header
-app.use(correlationMiddleware);
-// requestIdPropagationMiddleware: stores the ID in AsyncLocalStorage for downstream services
+// requestIdPropagationMiddleware: generates or passes through X-Request-ID, stores it
+// in AsyncLocalStorage for downstream services (stellar-service outbound calls, logs).
 app.use(requestIdPropagationMiddleware);
+// correlationMiddleware: stamps req.requestId, echoes X-Request-ID on the response and
+// correlates it with the active OpenTelemetry trace ID. Runs after propagation so the
+// ID is available to every subsequent middleware, route and error handler.
+app.use(correlationMiddleware);
 
 // ── Body parsing & sanitization ───────────────────────────────────────────────
 app.use(cookieParser());
