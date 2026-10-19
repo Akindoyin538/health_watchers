@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import Link from 'next/link';
 import { useQuery } from '@tanstack/react-query';
 import { PageWrapper, PageHeader } from '@/components/ui';
 import { StatCard } from '@/components/dashboard/StatCard';
@@ -128,6 +129,12 @@ export default function ReportsPage() {
         subtitle="Clinic performance overview"
         actions={
           <div className="flex flex-wrap items-center gap-2">
+            <Link
+              href="/reports/surveys"
+              className="text-primary-600 hover:bg-primary-50 dark:text-primary-400 rounded-md border border-neutral-300 px-3 py-1.5 text-sm font-medium dark:border-neutral-600"
+            >
+              Patient surveys →
+            </Link>
             {(['this_month', 'last_month', 'last_3_months'] as Period[]).map((p) => (
               <button
                 key={p}

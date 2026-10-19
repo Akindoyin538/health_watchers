@@ -169,6 +169,12 @@ const patientSchema = new Schema<PatientDocument>(
 patientSchema.index({ clinicId: 1, createdAt: -1 }, { name: 'clinicId_1_createdAt_-1' });
 // #1069 — Patient list query: clinicId + isActive filter used with query hint
 patientSchema.index({ clinicId: 1, isActive: 1 }, { name: 'clinicId_1_isActive_1' });
+// #1434 — v2 keyset pagination: newest first with _id tie-breaker, so any page
+// is a single index seek (no skip).
+patientSchema.index(
+  { clinicId: 1, isActive: 1, createdAt: -1, _id: -1 },
+  { name: 'patients_clinicId_isActive_createdAt_id' }
+);
 patientSchema.index(
   { firstName: 'text', lastName: 'text', searchName: 'text', systemId: 'text' },
   {
@@ -234,26 +240,14 @@ function decryptDoc(doc: unknown) {
   }
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null;
-}
-
-function encryptUpdatePayload(update: Record<string, unknown>) {
-  const target = isRecord(update.$set) ? update.$set : update;
-  for (const field of PHI_FIELDS) {
-    const value = target[field];
-    if (typeof value === 'string') target[field] = encrypt(value);
-  }
-}
-
-patientSchema.pre('findOneAndUpdate', function () {
-  const update = this.getUpdate() as Record<string, unknown>;
-  if (update) encryptUpdatePayload(update);
-});
-
 patientSchema.pre('updateMany', function () {
-  const update = this.getUpdate() as Record<string, unknown>;
-  if (update) encryptUpdatePayload(update);
+  const update = this.getUpdate() as Record<string, unknown> | null;
+  if (!update) return;
+  const target: Record<string, unknown> = (update.$set as Record<string, unknown>) ?? update;
+  for (const field of PHI_FIELDS) {
+    const val = target[field];
+    if (typeof val === 'string') target[field] = encrypt(val);
+  }
 });
 
 patientSchema.post('save', function () {

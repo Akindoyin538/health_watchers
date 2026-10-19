@@ -58,39 +58,10 @@ export async function sendFollowUpReminders(): Promise<void> {
         }
       }
     } catch (err) {
-      logger.error({ err, encounterId: (encounter as any)._id }, 'Failed to send follow-up reminder');
-    }
-  }
-}
-
-let reminderInterval: ReturnType<typeof setInterval> | null = null;
-
-export function startFollowUpReminderJob(): void {
-  // Schedule to run daily at 08:00 UTC
-  const now = new Date();
-  const next8am = new Date(now);
-  next8am.setUTCHours(8, 0, 0, 0);
-  if (next8am <= now) next8am.setUTCDate(next8am.getUTCDate() + 1);
-  const delay = next8am.getTime() - now.getTime();
-  const TWENTY_FOUR_HOURS = 24 * 60 * 60 * 1000;
-
-  setTimeout(() => {
-    sendFollowUpReminders().catch((err) =>
-      logger.error({ err }, 'Follow-up reminder job failed')
-    );
-    reminderInterval = setInterval(() => {
-      sendFollowUpReminders().catch((err) =>
-        logger.error({ err }, 'Follow-up reminder job failed')
+      logger.error(
+        { err, encounterId: (encounter as any)._id },
+        'Failed to send follow-up reminder'
       );
-    }, TWENTY_FOUR_HOURS);
-  }, delay);
-
-  logger.info(`Follow-up reminder job scheduled (first run in ${Math.round(delay / 60000)} minutes)`);
-}
-
-export function stopFollowUpReminderJob(): void {
-  if (reminderInterval) {
-    clearInterval(reminderInterval);
-    reminderInterval = null;
+    }
   }
 }

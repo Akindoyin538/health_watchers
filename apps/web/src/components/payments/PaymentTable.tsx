@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { useTranslations, useFormatter } from 'next-intl';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
@@ -12,13 +13,7 @@ import { PaymentFilters, type StatusFilter } from '@/components/payments/Payment
 import { PaymentTimeline } from '@/components/payments/PaymentTimeline';
 import { DisputeModal } from '@/components/payments/DisputeModal';
 import { API_URL } from '@/lib/api';
-import {
-  paymentStatusVariant,
-  canShowReceipt,
-  canFileDispute,
-  formatDate,
-  truncateId,
-} from '@/lib/utils';
+import { paymentStatusVariant, canShowReceipt, canFileDispute, truncateId } from '@/lib/utils';
 
 export interface Payment {
   id: string;
@@ -37,7 +32,9 @@ const DISPUTES_URL = `${API_URL}/api/v1/payments/disputes`;
 
 /** Animated dot + badge indicator for real-time status feedback. */
 function StatusIndicator({ status }: { status: string }) {
+  const tStatus = useTranslations('status');
   const variant = paymentStatusVariant(status);
+  const label = tStatus.has(status) ? tStatus(status) : status;
 
   const dotColor =
     status === 'pending'
@@ -48,12 +45,12 @@ function StatusIndicator({ status }: { status: string }) {
           ? 'bg-red-500'
           : 'bg-neutral-400';
 
-  if (variant === 'default') return <Badge variant="default">{status}</Badge>;
+  if (variant === 'default') return <Badge variant="default">{label}</Badge>;
 
   return (
     <span className="flex items-center gap-1.5">
       <span className={`h-2 w-2 rounded-full ${dotColor}`} aria-hidden="true" />
-      <Badge variant={variant}>{status}</Badge>
+      <Badge variant={variant}>{label}</Badge>
     </span>
   );
 }
@@ -67,7 +64,9 @@ interface Props {
   onVoid?: (paymentId: string) => Promise<void>;
 }
 
-export function PaymentTable({ payments, network = 'testnet', onConfirm, onVoid }: Props) {
+export function PaymentTable({ payments, network = 'testnet', onConfirm }: Props) {
+  const t = useTranslations('payments');
+  const format = useFormatter();
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
@@ -102,12 +101,23 @@ export function PaymentTable({ payments, network = 'testnet', onConfirm, onVoid 
         <table className="min-w-full divide-y divide-neutral-200 text-sm">
           <thead className="bg-neutral-50">
             <tr>
+              {(
+                ['id', 'patient', 'amount', 'status', 'transaction', 'date', 'actions'] as const
+              ).map((col) => (
+                <th
+                  key={col}
+                  scope="col"
+                  className={`px-4 py-3 text-xs font-medium tracking-wide text-neutral-500 uppercase ${col === 'actions' ? 'text-right' : 'text-left'}`}
+                >
+                  {t(col)}
+                </th>
+              ))}
               {['ID', 'Patient', 'Amount', 'Status', 'Transaction', 'Date', 'Actions'].map(
                 (col) => (
                   <th
                     key={col}
                     scope="col"
-                    className={`px-4 py-3 text-xs font-medium tracking-wide text-neutral-500 uppercase ${col === 'Actions' ? 'text-right' : 'text-left'}`}
+                    className={`px-4 py-3 text-xs font-medium uppercase tracking-wide text-neutral-500 ${col === 'Actions' ? 'text-right' : 'text-left'}`}
                   >
                     {col}
                   </th>
@@ -119,7 +129,7 @@ export function PaymentTable({ payments, network = 'testnet', onConfirm, onVoid 
             {filtered.length === 0 ? (
               <tr>
                 <td colSpan={7} className="px-4 py-8 text-center text-neutral-500">
-                  No payments match the current filters.
+                  {t('noMatch')}
                 </td>
               </tr>
             ) : (
@@ -133,7 +143,7 @@ export function PaymentTable({ payments, network = 'testnet', onConfirm, onVoid 
                   </td>
                   <td className="px-4 py-3 text-neutral-700">{p.patientId}</td>
                   <td className="px-4 py-3 font-medium text-neutral-900">
-                    {p.amount}{' '}
+                    {format.number(Number(p.amount), { maximumFractionDigits: 7 })}{' '}
                     <span className="font-normal text-neutral-500">{p.asset ?? 'XLM'}</span>
                   </td>
                   <td className="px-4 py-3">
@@ -147,11 +157,19 @@ export function PaymentTable({ payments, network = 'testnet', onConfirm, onVoid 
                     )}
                   </td>
                   <td className="px-4 py-3 text-xs whitespace-nowrap text-neutral-500">
+                    {p.createdAt
+                      ? format.dateTime(new Date(p.createdAt), {
+                          dateStyle: 'medium',
+                          timeStyle: 'short',
+                        })
+                      : '—'}
+                  <td className="whitespace-nowrap px-4 py-3 text-xs text-neutral-500">
                     {p.createdAt ? formatDate(p.createdAt) : '—'}
                   </td>
                   <td className="px-4 py-3 text-right">
                     <div className="flex flex-wrap items-center justify-end gap-2">
                       <Button size="sm" variant="secondary" onClick={() => setTimelineTarget(p)}>
+                        {t('timeline')}
                         Timeline
                       </Button>
 
@@ -161,18 +179,20 @@ export function PaymentTable({ payments, network = 'testnet', onConfirm, onVoid 
                           variant="secondary"
                           onClick={() => setReceiptTarget(p.intentId ?? p.id)}
                         >
-                          Receipt
+                          {t('receipt')}
                         </Button>
                       )}
 
                       {canFileDispute(p.status) && (
                         <Button size="sm" variant="secondary" onClick={() => setDisputeTarget(p)}>
+                          {t('fileDispute')}
                           File dispute
                         </Button>
                       )}
 
                       {p.status === 'pending' && (
                         <Button size="sm" variant="primary" onClick={() => setConfirmTarget(p.id)}>
+                          {t('confirm')}
                           Confirm
                         </Button>
                       )}
@@ -188,9 +208,9 @@ export function PaymentTable({ payments, network = 'testnet', onConfirm, onVoid 
                           href={`https://stellar.expert/explorer/${network}/tx/${p.txHash}`}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="text-primary-500 hover:bg-primary-50 focus-visible:ring-primary-500 inline-flex items-center gap-1 rounded-md px-3 py-1.5 text-xs font-medium transition-colors focus:outline-none focus-visible:ring-2"
+                          className="inline-flex items-center gap-1 rounded-md px-3 py-1.5 text-xs font-medium text-primary-500 transition-colors hover:bg-primary-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
                         >
-                          View on Explorer
+                          {t('viewOnExplorer')}
                           <svg
                             className="h-3 w-3"
                             fill="none"
@@ -221,7 +241,7 @@ export function PaymentTable({ payments, network = 'testnet', onConfirm, onVoid 
         <Modal
           open={Boolean(receiptTarget)}
           onClose={() => setReceiptTarget(null)}
-          title="Payment Receipt"
+          title={t('receiptTitle')}
         >
           <PaymentReceipt intentId={receiptTarget} onClose={() => setReceiptTarget(null)} />
         </Modal>
@@ -232,7 +252,7 @@ export function PaymentTable({ payments, network = 'testnet', onConfirm, onVoid 
         <Modal
           open={Boolean(timelineTarget)}
           onClose={() => setTimelineTarget(null)}
-          title="Payment status timeline"
+          title={t('timelineTitle')}
         >
           <PaymentTimeline
             txHash={timelineTarget.txHash}

@@ -3,7 +3,8 @@
 import { useState, useCallback } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import Link from 'next/link';
-import { ConfirmDialog, ErrorMessage, Toast, TableSkeleton, Button } from '@/components/ui';
+import { useTranslations, useFormatter } from 'next-intl';
+import { ErrorMessage, Toast, TableSkeleton, Button } from '@/components/ui';
 import {
   CreateEncounterForm,
   type CreateEncounterData,
@@ -15,11 +16,12 @@ import { fetchWithAuth } from '@/lib/auth';
 
 const API = `${API_URL}/api/v1`;
 
-function getEncounterErrorMessage(error: unknown): string {
-  if (!(error instanceof Error)) return 'Unable to load encounters right now.';
-  if (error.message.includes('Failed to fetch')) {
-    return 'Unable to reach the server. Please check your connection and try again.';
-  }
+function getEncounterErrorMessage(
+  error: unknown,
+  messages: { loadError: string; networkError: string }
+): string {
+  if (!(error instanceof Error)) return messages.loadError;
+  if (error.message.includes('Failed to fetch')) return messages.networkError;
   return error.message;
 }
 
@@ -51,6 +53,9 @@ const DEFAULT_FILTERS: Filters = {
 };
 
 export default function EncountersPage() {
+  const t = useTranslations('encounters');
+  const tStatus = useTranslations('status');
+  const format = useFormatter();
   const queryClient = useQueryClient();
   const [showForm, setShowForm] = useState(false);
   const [page, setPage] = useState(1);
@@ -79,7 +84,7 @@ export default function EncountersPage() {
       throw new Error(body.message || `Error ${res.status}`);
     }
     setShowForm(false);
-    setToast({ message: 'Encounter created successfully.', type: 'success' });
+    setToast({ message: t('created'), type: 'success' });
     queryClient.invalidateQueries({ queryKey: queryKeys.encounters.list() });
   };
 
@@ -126,7 +131,10 @@ export default function EncountersPage() {
   if (error)
     return (
       <ErrorMessage
-        message={getEncounterErrorMessage(error)}
+        message={getEncounterErrorMessage(error, {
+          loadError: t('loadError'),
+          networkError: t('networkError'),
+        })}
         onRetry={() => queryClient.invalidateQueries({ queryKey: queryKeys.encounters.list() })}
       />
     );
@@ -136,18 +144,18 @@ export default function EncountersPage() {
       {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
 
       <div className="mb-6 flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-gray-900 sm:text-3xl">Encounters</h1>
+        <h1 className="text-2xl font-bold text-gray-900 sm:text-3xl">{t('title')}</h1>
         <button
           onClick={() => setShowForm(true)}
           className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
         >
-          + New Encounter
+          {t('newEncounter')}
         </button>
       </div>
 
       {showForm && (
         <div className="mb-8 rounded-lg border border-gray-200 p-6 shadow-sm">
-          <h2 className="mb-4 text-lg font-semibold text-gray-900">New Encounter</h2>
+          <h2 className="mb-4 text-lg font-semibold text-gray-900">{t('newEncounterTitle')}</h2>
           <CreateEncounterForm onSubmit={handleCreate} onCancel={() => setShowForm(false)} />
         </div>
       )}
@@ -158,6 +166,7 @@ export default function EncountersPage() {
           {/* Full-text search */}
           <div className="xl:col-span-2">
             <label htmlFor="search-q" className="sr-only">
+              {t('filters.searchLabel')}
               Search encounters
             </label>
             <div className="relative">
@@ -178,7 +187,7 @@ export default function EncountersPage() {
                 value={filters.q}
                 onChange={(e) => setFilters((f) => ({ ...f, q: e.target.value }))}
                 onKeyDown={(e) => e.key === 'Enter' && applyFilters()}
-                placeholder="Search chief complaint or notes…"
+                placeholder={t('filters.searchPlaceholder')}
                 className="w-full rounded-md border border-gray-300 bg-white py-2 pr-3 pl-9 text-sm text-gray-700 placeholder-gray-400 focus:border-blue-400 focus:outline-none"
               />
             </div>
@@ -187,6 +196,7 @@ export default function EncountersPage() {
           {/* Status filter */}
           <div>
             <label htmlFor="filter-status" className="sr-only">
+              {t('filters.statusLabel')}
               Filter by status
             </label>
             <select
@@ -195,17 +205,18 @@ export default function EncountersPage() {
               onChange={(e) => setFilters((f) => ({ ...f, status: e.target.value }))}
               className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-700 focus:border-blue-400 focus:outline-none"
             >
-              <option value="">All Statuses</option>
-              <option value="open">Open</option>
-              <option value="closed">Closed</option>
-              <option value="follow-up">Follow-up</option>
-              <option value="cancelled">Cancelled</option>
+              <option value="">{t('allStatus')}</option>
+              <option value="open">{tStatus('open')}</option>
+              <option value="closed">{tStatus('closed')}</option>
+              <option value="follow-up">{tStatus('follow-up')}</option>
+              <option value="cancelled">{tStatus('cancelled')}</option>
             </select>
           </div>
 
           {/* Diagnosis code filter */}
           <div>
             <label htmlFor="filter-diagnosis" className="sr-only">
+              {t('filters.diagnosisLabel')}
               Filter by ICD-10 code
             </label>
             <input
@@ -213,7 +224,7 @@ export default function EncountersPage() {
               type="text"
               value={filters.diagnosisCode}
               onChange={(e) => setFilters((f) => ({ ...f, diagnosisCode: e.target.value }))}
-              placeholder="ICD-10 code (e.g. I24.9)"
+              placeholder={t('filters.diagnosisPlaceholder')}
               className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-700 placeholder-gray-400 focus:border-blue-400 focus:outline-none"
             />
           </div>
@@ -224,6 +235,7 @@ export default function EncountersPage() {
               htmlFor="filter-date-from"
               className="mb-1 block text-xs font-medium text-gray-500"
             >
+              {t('filters.from')}
               From
             </label>
             <input
@@ -241,6 +253,7 @@ export default function EncountersPage() {
               htmlFor="filter-date-to"
               className="mb-1 block text-xs font-medium text-gray-500"
             >
+              {t('filters.to')}
               To
             </label>
             <input
@@ -255,6 +268,7 @@ export default function EncountersPage() {
           {/* Sort */}
           <div>
             <label htmlFor="filter-sort" className="sr-only">
+              {t('filters.sortLabel')}
               Sort by
             </label>
             <select
@@ -263,9 +277,9 @@ export default function EncountersPage() {
               onChange={(e) => setFilters((f) => ({ ...f, sort: e.target.value as SortOption }))}
               className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-700 focus:border-blue-400 focus:outline-none"
             >
-              <option value="createdAt_desc">Newest first</option>
-              <option value="createdAt_asc">Oldest first</option>
-              <option value="patientName_asc">Patient name A–Z</option>
+              <option value="createdAt_desc">{t('filters.sortNewest')}</option>
+              <option value="createdAt_asc">{t('filters.sortOldest')}</option>
+              <option value="patientName_asc">{t('filters.sortPatientName')}</option>
             </select>
           </div>
         </div>
@@ -276,19 +290,19 @@ export default function EncountersPage() {
             onClick={applyFilters}
             className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
           >
-            Apply Filters
+            {t('filters.apply')}
           </button>
           {hasActiveFilters && (
             <button
               onClick={resetFilters}
               className="rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
             >
-              Clear Filters
+              {t('filters.clear')}
             </button>
           )}
           {hasActiveFilters && (
             <span className="text-xs text-gray-500">
-              {total} result{total !== 1 ? 's' : ''} found
+              {t('filters.resultCount', { count: total })}
             </span>
           )}
         </div>
@@ -296,15 +310,13 @@ export default function EncountersPage() {
 
       {encounters.length === 0 ? (
         <div className="rounded-lg border border-dashed border-gray-300 bg-gray-50 px-6 py-12 text-center">
-          <h2 className="text-lg font-semibold text-gray-900">No encounters found</h2>
+          <h2 className="text-lg font-semibold text-gray-900">{t('empty')}</h2>
           <p className="mt-2 text-sm text-gray-600">
-            {hasActiveFilters
-              ? 'Try adjusting your filters or clearing them to see all encounters.'
-              : 'Create your first encounter to get started.'}
+            {hasActiveFilters ? t('emptyFiltered') : t('emptyHint')}
           </p>
           {!hasActiveFilters && (
             <Button variant="primary" size="md" className="mt-5" onClick={() => setShowForm(true)}>
-              Create Encounter
+              {t('createEncounter')}
             </Button>
           )}
         </div>
@@ -315,6 +327,13 @@ export default function EncountersPage() {
               <thead className="bg-gray-50">
                 <tr>
                   {[
+                    t('patient'),
+                    t('chiefComplaint'),
+                    t('diagnosis'),
+                    t('status'),
+                    t('doctor'),
+                    t('date'),
+                    t('actions'),
                     'Patient',
                     'Chief Complaint',
                     'Diagnosis',
@@ -366,40 +385,16 @@ export default function EncountersPage() {
                       <span
                         className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${STATUS_COLORS[e.status] ?? 'bg-gray-100 text-gray-700'}`}
                       >
-                        {e.status}
+                        {tStatus.has(e.status) ? tStatus(e.status) : e.status}
                       </span>
                     </td>
-                    <td className="px-4 py-3 font-mono text-xs text-gray-600">
-                      {e.attendingDoctorId}
-                    </td>
-                    <td className="px-4 py-3 text-xs whitespace-nowrap text-gray-500">
+                    <td className="whitespace-nowrap px-4 py-3 text-xs text-gray-500">
                       {e.createdAt ? new Date(e.createdAt).toLocaleDateString() : '—'}
                     </td>
                     <td className="px-4 py-3 text-right">
-                      <div className="flex items-center justify-end gap-2">
-                        <Link
-                          href={`/encounters/${e.id}`}
-                          className="text-blue-600 hover:underline"
-                        >
-                          View details
-                        </Link>
-                        {e.status !== 'cancelled' && (
-                          <button
-                            type="button"
-                            onClick={() =>
-                              setDeleteTarget({
-                                id: e.id,
-                                patientName: e.patient
-                                  ? `${e.patient.firstName} ${e.patient.lastName}`
-                                  : e.patientId,
-                              })
-                            }
-                            className="text-red-600 hover:underline"
-                          >
-                            Remove
-                          </button>
-                        )}
-                      </div>
+                      <Link href={`/encounters/${e.id}`} className="text-blue-600 hover:underline">
+                        View details
+                      </Link>
                     </td>
                   </tr>
                 ))}
@@ -409,23 +404,21 @@ export default function EncountersPage() {
 
           {/* Pagination */}
           <div className="mt-4 flex items-center justify-between text-sm text-gray-600">
-            <span>
-              Page {page} of {totalPages} ({total} total)
-            </span>
+            <span>{t('pagination.summary', { page, totalPages, total })}</span>
             <div className="flex gap-2">
               <button
                 onClick={() => setPage((p) => Math.max(1, p - 1))}
                 disabled={page === 1}
                 className="rounded border border-gray-300 px-3 py-1.5 hover:bg-gray-50 disabled:opacity-40"
               >
-                Previous
+                {t('pagination.previous')}
               </button>
               <button
                 onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
                 disabled={page >= totalPages}
                 className="rounded border border-gray-300 px-3 py-1.5 hover:bg-gray-50 disabled:opacity-40"
               >
-                Next
+                {t('pagination.next')}
               </button>
             </div>
           </div>
