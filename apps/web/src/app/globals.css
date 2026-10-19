@@ -45,8 +45,9 @@
     color: var(--color-neutral-900);
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
-    transition: background-color 0.3s cubic-bezier(0.4, 0, 0.2, 1),
-                color 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    transition:
+      background-color 0.3s cubic-bezier(0.4, 0, 0.2, 1),
+      color 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   }
 
   .dark body {
@@ -109,4 +110,40 @@
   border-left: 3px solid #d1d5db;
   padding-left: 0.75rem;
   color: #6b7280;
+}
+
+/* ── ConfirmDialog animations ─────────────────────────────────────────── */
+@keyframes confirm-dialog-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes confirm-dialog-scale-in {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.confirm-dialog-backdrop {
+  animation: confirm-dialog-fade-in 0.15s ease-out forwards;
+}
+
+.confirm-dialog-panel {
+  animation: confirm-dialog-scale-in 0.2s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .confirm-dialog-backdrop,
+  .confirm-dialog-panel {
+    animation: none;
+  }
 }

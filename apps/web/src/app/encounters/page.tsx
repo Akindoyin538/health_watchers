@@ -3,7 +3,7 @@
 import { useState, useCallback } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import Link from 'next/link';
-import { ErrorMessage, Toast, TableSkeleton, Button } from '@/components/ui';
+import { ConfirmDialog, ErrorMessage, Toast, TableSkeleton, Button } from '@/components/ui';
 import {
   CreateEncounterForm,
   type CreateEncounterData,
@@ -11,6 +11,7 @@ import {
 import { queryKeys } from '@/lib/queryKeys';
 import { useEncounters } from '@/lib/queries/useEncounters';
 import { API_URL } from '@/lib/api';
+import { fetchWithAuth } from '@/lib/auth';
 
 const API = `${API_URL}/api/v1`;
 
@@ -56,6 +57,10 @@ export default function EncountersPage() {
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
   const [filters, setFilters] = useState<Filters>(DEFAULT_FILTERS);
   const [appliedFilters, setAppliedFilters] = useState<Filters>(DEFAULT_FILTERS);
+  const [deleteTarget, setDeleteTarget] = useState<{ id: string; patientName: string } | null>(
+    null
+  );
+  const [deleting, setDeleting] = useState(false);
 
   const { data, isLoading, error } = useEncounters(page, 20, appliedFilters);
   const encounters = data?.data ?? [];
@@ -78,6 +83,30 @@ export default function EncountersPage() {
     queryClient.invalidateQueries({ queryKey: queryKeys.encounters.list() });
   };
 
+  const handleDeleteEncounter = async () => {
+    if (!deleteTarget) return;
+    setDeleting(true);
+    try {
+      const res = await fetchWithAuth(`${API}/encounters/${deleteTarget.id}`, {
+        method: 'DELETE',
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.message ?? `Error ${res.status}`);
+      }
+      setToast({ message: 'Encounter removed successfully.', type: 'success' });
+      setDeleteTarget(null);
+      queryClient.invalidateQueries({ queryKey: queryKeys.encounters.list() });
+    } catch (error) {
+      setToast({
+        message: error instanceof Error ? error.message : 'Unable to remove encounter.',
+        type: 'error',
+      });
+    } finally {
+      setDeleting(false);
+    }
+  };
+
   const applyFilters = useCallback(() => {
     setPage(1);
     setAppliedFilters({ ...filters });
@@ -90,7 +119,7 @@ export default function EncountersPage() {
   };
 
   const hasActiveFilters = Object.entries(appliedFilters).some(
-    ([k, v]) => k !== 'sort' && v !== '',
+    ([k, v]) => k !== 'sort' && v !== ''
   );
 
   if (isLoading) return <TableSkeleton columns={5} rows={8} />;
@@ -128,10 +157,12 @@ export default function EncountersPage() {
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           {/* Full-text search */}
           <div className="xl:col-span-2">
-            <label htmlFor="search-q" className="sr-only">Search encounters</label>
+            <label htmlFor="search-q" className="sr-only">
+              Search encounters
+            </label>
             <div className="relative">
               <svg
-                className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400"
+                className="pointer-events-none absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-gray-400"
                 viewBox="0 0 24 24"
                 fill="none"
                 stroke="currentColor"
@@ -148,14 +179,16 @@ export default function EncountersPage() {
                 onChange={(e) => setFilters((f) => ({ ...f, q: e.target.value }))}
                 onKeyDown={(e) => e.key === 'Enter' && applyFilters()}
                 placeholder="Search chief complaint or notes…"
-                className="w-full rounded-md border border-gray-300 bg-white py-2 pl-9 pr-3 text-sm text-gray-700 placeholder-gray-400 focus:border-blue-400 focus:outline-none"
+                className="w-full rounded-md border border-gray-300 bg-white py-2 pr-3 pl-9 text-sm text-gray-700 placeholder-gray-400 focus:border-blue-400 focus:outline-none"
               />
             </div>
           </div>
 
           {/* Status filter */}
           <div>
-            <label htmlFor="filter-status" className="sr-only">Filter by status</label>
+            <label htmlFor="filter-status" className="sr-only">
+              Filter by status
+            </label>
             <select
               id="filter-status"
               value={filters.status}
@@ -172,7 +205,9 @@ export default function EncountersPage() {
 
           {/* Diagnosis code filter */}
           <div>
-            <label htmlFor="filter-diagnosis" className="sr-only">Filter by ICD-10 code</label>
+            <label htmlFor="filter-diagnosis" className="sr-only">
+              Filter by ICD-10 code
+            </label>
             <input
               id="filter-diagnosis"
               type="text"
@@ -185,7 +220,10 @@ export default function EncountersPage() {
 
           {/* Date from */}
           <div>
-            <label htmlFor="filter-date-from" className="block text-xs font-medium text-gray-500 mb-1">
+            <label
+              htmlFor="filter-date-from"
+              className="mb-1 block text-xs font-medium text-gray-500"
+            >
               From
             </label>
             <input
@@ -199,7 +237,10 @@ export default function EncountersPage() {
 
           {/* Date to */}
           <div>
-            <label htmlFor="filter-date-to" className="block text-xs font-medium text-gray-500 mb-1">
+            <label
+              htmlFor="filter-date-to"
+              className="mb-1 block text-xs font-medium text-gray-500"
+            >
               To
             </label>
             <input
@@ -213,7 +254,9 @@ export default function EncountersPage() {
 
           {/* Sort */}
           <div>
-            <label htmlFor="filter-sort" className="sr-only">Sort by</label>
+            <label htmlFor="filter-sort" className="sr-only">
+              Sort by
+            </label>
             <select
               id="filter-sort"
               value={filters.sort}
@@ -271,11 +314,19 @@ export default function EncountersPage() {
             <table className="min-w-full divide-y divide-gray-200 text-sm">
               <thead className="bg-gray-50">
                 <tr>
-                  {['Patient', 'Chief Complaint', 'Diagnosis', 'Status', 'Doctor', 'Date', 'Actions'].map((h) => (
+                  {[
+                    'Patient',
+                    'Chief Complaint',
+                    'Diagnosis',
+                    'Status',
+                    'Doctor',
+                    'Date',
+                    'Actions',
+                  ].map((h) => (
                     <th
                       key={h}
                       scope="col"
-                      className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500"
+                      className="px-4 py-3 text-left text-xs font-medium tracking-wide text-gray-500 uppercase"
                     >
                       {h}
                     </th>
@@ -299,7 +350,9 @@ export default function EncountersPage() {
                         <span className="font-mono text-xs text-gray-600">{e.patientId}</span>
                       )}
                     </td>
-                    <td className="max-w-xs truncate px-4 py-3 text-gray-900">{e.chiefComplaint}</td>
+                    <td className="max-w-xs truncate px-4 py-3 text-gray-900">
+                      {e.chiefComplaint}
+                    </td>
                     <td className="px-4 py-3">
                       {e.diagnosis && e.diagnosis.length > 0 ? (
                         <span className="font-mono text-xs text-gray-600">
@@ -316,17 +369,37 @@ export default function EncountersPage() {
                         {e.status}
                       </span>
                     </td>
-                    <td className="px-4 py-3 font-mono text-xs text-gray-600">{e.attendingDoctorId}</td>
-                    <td className="whitespace-nowrap px-4 py-3 text-xs text-gray-500">
+                    <td className="px-4 py-3 font-mono text-xs text-gray-600">
+                      {e.attendingDoctorId}
+                    </td>
+                    <td className="px-4 py-3 text-xs whitespace-nowrap text-gray-500">
                       {e.createdAt ? new Date(e.createdAt).toLocaleDateString() : '—'}
                     </td>
                     <td className="px-4 py-3 text-right">
-                      <Link
-                        href={`/encounters/${e.id}`}
-                        className="text-blue-600 hover:underline"
-                      >
-                        View details
-                      </Link>
+                      <div className="flex items-center justify-end gap-2">
+                        <Link
+                          href={`/encounters/${e.id}`}
+                          className="text-blue-600 hover:underline"
+                        >
+                          View details
+                        </Link>
+                        {e.status !== 'cancelled' && (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setDeleteTarget({
+                                id: e.id,
+                                patientName: e.patient
+                                  ? `${e.patient.firstName} ${e.patient.lastName}`
+                                  : e.patientId,
+                              })
+                            }
+                            className="text-red-600 hover:underline"
+                          >
+                            Remove
+                          </button>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -358,6 +431,27 @@ export default function EncountersPage() {
           </div>
         </>
       )}
+
+      {/* Remove encounter confirmation */}
+      <ConfirmDialog
+        open={Boolean(deleteTarget)}
+        onClose={() => {
+          if (!deleting) setDeleteTarget(null);
+        }}
+        onConfirm={handleDeleteEncounter}
+        title="Remove encounter"
+        confirmLabel="Remove encounter"
+        cancelLabel="Cancel"
+        loading={deleting}
+        message={
+          deleteTarget ? (
+            <>
+              You are about to remove the encounter for <strong>{deleteTarget.patientName}</strong>.
+              This will cancel the encounter and mark it as inactive. This action cannot be undone.
+            </>
+          ) : null
+        }
+      />
     </main>
   );
 }

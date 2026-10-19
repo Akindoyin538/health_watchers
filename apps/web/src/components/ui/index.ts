@@ -23,3 +23,4 @@ export { Tabs, TabsList, TabsTrigger, TabsContent } from './Tabs';
 export { Textarea, type TextareaProps } from './Textarea';
 export { PasswordInput, type PasswordInputProps } from './PasswordInput';
 export { OtpInput, type OtpInputProps } from './OtpInput';
+export { ConfirmDialog, type ConfirmDialogProps } from './ConfirmDialog';
