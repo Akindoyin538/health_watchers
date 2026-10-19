@@ -14,6 +14,16 @@ export { authenticate, requireRoles } from './auth.middleware';
 
 // Request validation
 export { validateRequest } from './validate.middleware';
+export { validate } from './validate.middleware';
+
+// Idempotency key support for payment endpoints (issue #1600)
+export { idempotency, type IdempotencyOptions } from './idempotency.middleware';
+
+// Incoming webhook signature verification (issue #1601)
+export {
+  verifyWebhookSignature,
+  type WebhookSignatureOptions,
+} from './webhook-signature.middleware';
 
 // Common shared middleware (issue #929, #1053)
 export {

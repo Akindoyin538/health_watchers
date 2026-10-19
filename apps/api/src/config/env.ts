@@ -100,6 +100,26 @@ const envSchema = z.object({
   // ── TLS enforcement ───────────────────────────────────────────────────────
   TRUST_PROXY: z.string().optional(),
   NODE_ENV: z.string().optional(),
+
+  // ── Webhook signature verification (HMAC-SHA256) ──────────────────────────
+  // Current signing secret used to verify X-Webhook-Signature on incoming webhooks.
+  WEBHOOK_SIGNING_SECRET: z
+    .string()
+    .min(32, 'WEBHOOK_SIGNING_SECRET must be at least 32 characters (too weak)')
+    .optional(),
+  // Previous signing secret, accepted during key rotation.
+  WEBHOOK_SIGNING_SECRET_PREVIOUS: z
+    .string()
+    .min(32, 'WEBHOOK_SIGNING_SECRET_PREVIOUS must be at least 32 characters (too weak)')
+    .optional(),
+
+  // ── Idempotency keys for payment endpoints ────────────────────────────────
+  // TTL (in seconds) for idempotency key → response mappings. Default: 24 hours.
+  IDEMPOTENCY_TTL_SECONDS: z
+    .string()
+    .regex(/^\d+$/, 'IDEMPOTENCY_TTL_SECONDS must be a positive integer')
+    .refine((v) => Number(v) > 0, 'IDEMPOTENCY_TTL_SECONDS must be greater than 0')
+    .default('86400'),
 });
 
 const result = envSchema.safeParse(process.env);

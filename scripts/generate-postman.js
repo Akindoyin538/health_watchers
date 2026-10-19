@@ -213,7 +213,7 @@ function validateCollection(collection) {
 if (update) {
   console.log('Generating Postman collection from OpenAPI spec…');
   const spec = exportOpenApiSpec();
-  const collection = convertToPostman(spec);
+  const collection = augmentCollection(convertToPostman(spec));
   validateCollection(collection);
   fs.writeFileSync(COLLECTION_PATH, JSON.stringify(collection, null, 2));
   console.log(`✅ Written to ${COLLECTION_PATH}`);
@@ -224,6 +224,6 @@ if (update) {
     console.error(`❌ Collection not found at ${COLLECTION_PATH}`);
     process.exit(1);
   }
-  const collection = JSON.parse(fs.readFileSync(COLLECTION_PATH, 'utf8'));
+  const collection = augmentCollection(JSON.parse(fs.readFileSync(COLLECTION_PATH, 'utf8')));
   validateCollection(collection);
 }
