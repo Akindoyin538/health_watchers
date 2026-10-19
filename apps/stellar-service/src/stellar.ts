@@ -12,6 +12,14 @@ import { assertTransactionLimit } from './guards.js';
 import logger from './logger.js';
 import { batchProcessor } from './batch-processor.js';
 import ResilientHorizonClient from './horizon-client.js';
+import {
+  transactionsSubmittedTotal,
+  transactionsConfirmedTotal,
+  transactionsFailedTotal,
+  transactionConfirmationDuration,
+  accountBalanceXlm,
+  networkFeeStroops,
+} from './metrics.js';
 
 // Initialize resilient Horizon client
 const horizonClient = new ResilientHorizonClient(stellarConfig.horizonUrls);
@@ -67,6 +75,55 @@ export async function withHorizonCall<T>(
     );
     throw error;
   }
+}
+
+/**
+ * Record a successful transaction submission: increments the submitted and
+ * confirmed counters and observes the confirmation duration histogram.
+ */
+export function recordTransactionSuccess(
+  operation: string,
+  durationMs: number,
+  hash?: string
+): void {
+  transactionsSubmittedTotal.inc({ operation });
+  transactionsConfirmedTotal.inc({ operation });
+  transactionConfirmationDuration.observe({ operation }, durationMs / 1000);
+  logger.debug(
+    { operation, hash, durationMs, outcome: 'confirmed' },
+    'Recorded transaction success metrics'
+  );
+}
+
+/**
+ * Record a failed transaction submission: increments the submitted and failed
+ * counters. The confirmation duration histogram is not observed for failures.
+ */
+export function recordTransactionFailure(operation: string, durationMs: number): void {
+  transactionsSubmittedTotal.inc({ operation });
+  transactionsFailedTotal.inc({ operation });
+  logger.debug(
+    { operation, durationMs, outcome: 'failed' },
+    'Recorded transaction failure metrics'
+  );
+}
+
+/**
+ * Update the account balance gauge for the platform account.
+ */
+export function recordAccountBalance(publicKey: string, balanceXlm: string | number): void {
+  const value = typeof balanceXlm === 'number' ? balanceXlm : parseFloat(balanceXlm);
+  if (!Number.isFinite(value)) return;
+  accountBalanceXlm.set({ account: publicKey }, value);
+}
+
+/**
+ * Update the network fee gauge (in stroops).
+ */
+export function recordNetworkFee(feeStroops: string | number): void {
+  const value = typeof feeStroops === 'number' ? feeStroops : parseInt(feeStroops, 10);
+  if (!Number.isFinite(value)) return;
+  networkFeeStroops.set(value);
 }
 
 /**
@@ -166,6 +223,10 @@ export async function getAccountBalance(publicKey: string) {
       (b: any) => b.asset_code === 'USDC' && b.asset_type !== 'native'
     );
 
+    if (xlmBalance) {
+      recordAccountBalance(publicKey, xlmBalance.balance);
+    }
+
     const payments = await withHorizonCall('payments', { publicKey }, () =>
       server.payments().forAccount(publicKey).limit(10).order('desc').call()
     );
@@ -242,6 +303,7 @@ export async function createUsdcTrustline(publicKey: string, usdcIssuer: string)
     }
 
     const fee = await withHorizonCall('fetchBaseFee', { publicKey }, () => server.fetchBaseFee());
+    recordNetworkFee(fee);
     const transaction = new TransactionBuilder(sourceAccount, {
       fee: String(fee),
       networkPassphrase: getNetworkPassphrase(),
@@ -264,6 +326,7 @@ export async function createUsdcTrustline(publicKey: string, usdcIssuer: string)
           () => server.submitTransaction(transaction)
         );
         const durationMs = Date.now() - start;
+        recordTransactionSuccess('createUsdcTrustline', durationMs, result.hash);
         logger.info(
           {
             operation: 'createUsdcTrustline',
@@ -293,6 +356,8 @@ export async function createUsdcTrustline(publicKey: string, usdcIssuer: string)
     );
     return { envelope: transaction.toEnvelope().toXDR('base64'), dryRun: true };
   } catch (error) {
+    const durationMs = Date.now() - start;
+    recordTransactionFailure('createUsdcTrustline', durationMs);
     logger.error(
       {
         operation: 'createUsdcTrustline',
@@ -300,7 +365,7 @@ export async function createUsdcTrustline(publicKey: string, usdcIssuer: string)
         asset: 'USDC',
         usdcIssuer,
         outcome: 'failure',
-        durationMs: Date.now() - start,
+        durationMs,
         error: toErrorContext(error),
       },
       'Failed to create USDC trustline'
@@ -581,6 +646,7 @@ export async function issueRefund(toPublicKey: string, amount: string, memo: str
       () => server.loadAccount(sourceKeypair.publicKey())
     );
     const fee = await withHorizonCall('fetchBaseFee', {}, () => server.fetchBaseFee());
+    recordNetworkFee(fee);
 
     const transaction = new TransactionBuilder(account, {
       fee: String(fee),
@@ -623,6 +689,7 @@ export async function issueRefund(toPublicKey: string, amount: string, memo: str
       () => server.submitTransaction(transaction)
     );
     const durationMs = Date.now() - start;
+    recordTransactionSuccess('issueRefund', durationMs, result.hash);
     logger.info(
       {
         operation: 'issueRefund',
@@ -637,6 +704,8 @@ export async function issueRefund(toPublicKey: string, amount: string, memo: str
     );
     return { transactionHash: result.hash, durationMs };
   } catch (error) {
+    const durationMs = Date.now() - start;
+    recordTransactionFailure('issueRefund', durationMs);
     logger.error(
       {
         operation: 'issueRefund',
@@ -644,7 +713,7 @@ export async function issueRefund(toPublicKey: string, amount: string, memo: str
         amount,
         asset: 'XLM',
         outcome: 'failure',
-        durationMs: Date.now() - start,
+        durationMs,
         error: toErrorContext(error),
       },
       'Failed to issue refund'
@@ -665,6 +734,7 @@ export async function getFeeStats() {
     server.feeStats()
   );
   const { fee_charged } = stats;
+  recordNetworkFee(fee_charged.p50);
   logger.info(
     { operation: 'getFeeStats', outcome: 'success', durationMs: Date.now() - start },
     'Fetched fee statistics'
@@ -741,6 +811,7 @@ export async function buildFeeBumpTransaction(innerXdr: string): Promise<{
         { operation: 'buildFeeBumpTransaction', hash, feeStroops },
         () => server.submitTransaction(feeBumpTx)
       );
+      recordTransactionSuccess('buildFeeBumpTransaction', Date.now() - start, hash);
     }
 
     logger.info(
@@ -756,11 +827,13 @@ export async function buildFeeBumpTransaction(innerXdr: string): Promise<{
 
     return { xdr, hash, feeStroops };
   } catch (error) {
+    const durationMs = Date.now() - start;
+    recordTransactionFailure('buildFeeBumpTransaction', durationMs);
     logger.error(
       {
         operation: 'buildFeeBumpTransaction',
         outcome: 'failure',
-        durationMs: Date.now() - start,
+        durationMs,
         error: toErrorContext(error),
       },
       'Failed to build fee bump transaction'
@@ -1138,22 +1211,26 @@ export async function submitMultiSigTransaction(
       server.submitTransaction(transaction)
     );
 
+    const durationMs = Date.now() - start;
+    recordTransactionSuccess('submitMultiSigTransaction', durationMs, result.hash);
     logger.info(
       {
         operation: 'submitMultiSigTransaction',
         hash: result.hash,
         outcome: 'success',
-        durationMs: Date.now() - start,
+        durationMs,
       },
       'Multi-sig transaction submitted'
     );
     return { hash: result.hash };
   } catch (error) {
+    const durationMs = Date.now() - start;
+    recordTransactionFailure('submitMultiSigTransaction', durationMs);
     logger.error(
       {
         operation: 'submitMultiSigTransaction',
         outcome: 'failure',
-        durationMs: Date.now() - start,
+        durationMs,
         error: toErrorContext(error),
       },
       'Failed to submit multi-sig transaction'
@@ -1325,6 +1402,7 @@ export async function processBatchPayments(
       server.loadAccount(fromPublicKey)
     );
     const fee = await withHorizonCall('fetchBaseFee', {}, () => server.fetchBaseFee());
+    recordNetworkFee(fee);
 
     // Each operation costs one base fee unit
     const totalFee = String(parseInt(String(fee), 10) * payments.length);
@@ -1372,6 +1450,7 @@ export async function processBatchPayments(
     );
 
     const durationMs = Date.now() - start;
+    recordTransactionSuccess('processBatchPayments', durationMs, result.hash);
     logger.info(
       {
         operation: 'processBatchPayments',
@@ -1386,13 +1465,15 @@ export async function processBatchPayments(
 
     return { hash: result.hash, count: payments.length, totalAmount, durationMs };
   } catch (error) {
+    const durationMs = Date.now() - start;
+    recordTransactionFailure('processBatchPayments', durationMs);
     logger.error(
       {
         operation: 'processBatchPayments',
         count: payments.length,
         totalAmount,
         outcome: 'failure',
-        durationMs: Date.now() - start,
+        durationMs,
         error: toErrorContext(error),
       },
       'Failed to process batch payments'

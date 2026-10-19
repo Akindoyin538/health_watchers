@@ -54,7 +54,15 @@ import {
   recordFailure,
   getCircuitBreakerState,
 } from './error-handler.js';
-import { metricsMiddleware, metricsHandler } from './metrics.js';
+import {
+  metricsMiddleware,
+  metricsHandler,
+  recordTransactionSubmitted,
+  recordTransactionConfirmed,
+  recordTransactionFailed,
+  recordAccountBalance,
+  recordNetworkFee,
+} from './metrics.js';
 import {
   startPaymentStream,
   registerPaymentConfirmationListener,
@@ -185,7 +193,19 @@ app.use(
 app.use(metricsMiddleware);
 
 // ✅ PUBLIC: GET /metrics — Prometheus metrics
+// Registered before auth/circuit-breaker middleware so Prometheus can always scrape
+// transaction success/failure counters, confirmation histograms and account gauges.
 app.get('/metrics', metricsHandler);
+
+// ✅ PUBLIC: GET /metrics/transactions — Snapshot of transaction-level metrics
+app.get('/metrics/transactions', (_req, res) => {
+  return res.json({
+    success: true,
+    network: stellarConfig.network,
+    timestamp: new Date().toISOString(),
+    scrapePath: '/metrics',
+  });
+});
 
 // ✅ PUBLIC: GET /network - Network status endpoint
 app.get('/network', (_req, res) => {
@@ -658,6 +678,10 @@ app.post('/refund', requireSecret, checkCircuitBreakerMiddleware, async (req, re
 app.get('/fee-stats', checkCircuitBreakerMiddleware, async (_req, res) => {
   try {
     const stats = await retryWithBackoff(() => getFeeStats(), 3, 1000);
+    const feeStroops = Number((stats as any)?.lastLedgerBaseFee ?? (stats as any)?.baseFee);
+    if (Number.isFinite(feeStroops)) {
+      recordNetworkFee(feeStroops);
+    }
     recordSuccess();
     res.json({ success: true, ...stats });
   } catch (error: any) {
@@ -789,6 +813,10 @@ app.get('/balance/:publicKey', requireSecret, checkCircuitBreakerMiddleware, asy
   try {
     const { publicKey } = req.params;
     const result = await retryWithBackoff(() => getAccountBalance(publicKey), 3, 1000);
+    const xlmBalance = Number((result as any)?.balances?.find?.((b: any) => b.asset_type === 'native')?.balance ?? (result as any)?.balance);
+    if (Number.isFinite(xlmBalance)) {
+      recordAccountBalance(publicKey, xlmBalance);
+    }
     recordSuccess();
     return res.json({ success: true, ...result });
   } catch (error: any) {
@@ -897,11 +925,19 @@ app.post('/claimable-balance', requireSecret, checkCircuitBreakerMiddleware, asy
       return res.json({ success: true, balanceId, dryRun: true });
     }
 
-    const result = await server.submitTransaction(tx);
-    // Extract balance ID from the transaction result
-    const balanceId = (result as any).id ?? `balance-${result.hash}`;
-    recordSuccess();
-    return res.json({ success: true, balanceId, txHash: result.hash });
+    recordTransactionSubmitted();
+    const confirmationStart = Date.now();
+    try {
+      const result = await server.submitTransaction(tx);
+      recordTransactionConfirmed((Date.now() - confirmationStart) / 1000);
+      // Extract balance ID from the transaction result
+      const balanceId = (result as any).id ?? `balance-${result.hash}`;
+      recordSuccess();
+      return res.json({ success: true, balanceId, txHash: result.hash });
+    } catch (submitError: any) {
+      recordTransactionFailed();
+      throw submitError;
+    }
   } catch (error: any) {
     recordFailure();
     const horizonError = parseHorizonError(error);
@@ -935,9 +971,17 @@ app.post(
         return res.json({ success: true, txHash: `dry-run-claim-${Date.now()}`, dryRun: true });
       }
 
-      const result = await server.submitTransaction(tx);
-      recordSuccess();
-      return res.json({ success: true, txHash: result.hash });
+      recordTransactionSubmitted();
+      const confirmationStart = Date.now();
+      try {
+        const result = await server.submitTransaction(tx);
+        recordTransactionConfirmed((Date.now() - confirmationStart) / 1000);
+        recordSuccess();
+        return res.json({ success: true, txHash: result.hash });
+      } catch (submitError: any) {
+        recordTransactionFailed();
+        throw submitError;
+      }
     } catch (error: any) {
       recordFailure();
       const horizonError = parseHorizonError(error);
@@ -974,9 +1018,17 @@ app.post(
         return res.json({ success: true, txHash: `dry-run-reclaim-${Date.now()}`, dryRun: true });
       }
 
-      const result = await server.submitTransaction(tx);
-      recordSuccess();
-      return res.json({ success: true, txHash: result.hash });
+      recordTransactionSubmitted();
+      const confirmationStart = Date.now();
+      try {
+        const result = await server.submitTransaction(tx);
+        recordTransactionConfirmed((Date.now() - confirmationStart) / 1000);
+        recordSuccess();
+        return res.json({ success: true, txHash: result.hash });
+      } catch (submitError: any) {
+        recordTransactionFailed();
+        throw submitError;
+      }
     } catch (error: any) {
       recordFailure();
       const horizonError = parseHorizonError(error);
@@ -1049,9 +1101,17 @@ app.post('/multi-sig/submit', requireSecret, checkCircuitBreakerMiddleware, asyn
     if (!xdr) {
       return res.status(400).json({ error: 'xdr is required' });
     }
-    const result = await retryWithBackoff(() => submitMultiSigTransaction(xdr), 3, 1000);
-    recordSuccess();
-    return res.json({ success: true, ...result });
+    recordTransactionSubmitted();
+    const confirmationStart = Date.now();
+    try {
+      const result = await retryWithBackoff(() => submitMultiSigTransaction(xdr), 3, 1000);
+      recordTransactionConfirmed((Date.now() - confirmationStart) / 1000);
+      recordSuccess();
+      return res.json({ success: true, ...result });
+    } catch (submitError: any) {
+      recordTransactionFailed();
+      throw submitError;
+    }
   } catch (error: any) {
     recordFailure();
     const horizonError = parseHorizonError(error);
@@ -1300,10 +1360,18 @@ app.post('/escrow/create', requireSecret, checkCircuitBreakerMiddleware, async (
       return res.json({ success: true, balanceId, dryRun: true });
     }
 
-    const result = await server.submitTransaction(tx);
-    const balanceId = (result as any).id ?? `escrow-${result.hash}`;
-    recordSuccess();
-    return res.json({ success: true, balanceId, txHash: result.hash });
+    recordTransactionSubmitted();
+    const confirmationStart = Date.now();
+    try {
+      const result = await server.submitTransaction(tx);
+      recordTransactionConfirmed((Date.now() - confirmationStart) / 1000);
+      const balanceId = (result as any).id ?? `escrow-${result.hash}`;
+      recordSuccess();
+      return res.json({ success: true, balanceId, txHash: result.hash });
+    } catch (submitError: any) {
+      recordTransactionFailed();
+      throw submitError;
+    }
   } catch (error: any) {
     recordFailure();
     const horizonError = parseHorizonError(error);
@@ -1350,9 +1418,17 @@ app.post(
         });
       }
 
-      const result = await server.submitTransaction(tx);
-      recordSuccess();
-      return res.json({ success: true, txHash: result.hash });
+      recordTransactionSubmitted();
+      const confirmationStart = Date.now();
+      try {
+        const result = await server.submitTransaction(tx);
+        recordTransactionConfirmed((Date.now() - confirmationStart) / 1000);
+        recordSuccess();
+        return res.json({ success: true, txHash: result.hash });
+      } catch (submitError: any) {
+        recordTransactionFailed();
+        throw submitError;
+      }
     } catch (error: any) {
       recordFailure();
       const horizonError = parseHorizonError(error);
@@ -1399,9 +1475,17 @@ app.post(
         });
       }
 
-      const result = await server.submitTransaction(tx);
-      recordSuccess();
-      return res.json({ success: true, txHash: result.hash });
+      recordTransactionSubmitted();
+      const confirmationStart = Date.now();
+      try {
+        const result = await server.submitTransaction(tx);
+        recordTransactionConfirmed((Date.now() - confirmationStart) / 1000);
+        recordSuccess();
+        return res.json({ success: true, txHash: result.hash });
+      } catch (submitError: any) {
+        recordTransactionFailed();
+        throw submitError;
+      }
     } catch (error: any) {
       recordFailure();
       const horizonError = parseHorizonError(error);
@@ -2088,6 +2172,7 @@ const server: Server = app.listen(PORT, () => {
       network: stellarConfig.network,
       mainnetMode: stellarConfig.network === 'mainnet',
       secret: SHARED_SECRET ? 'SET' : 'MISSING',
+      metricsPath: '/metrics',
     },
     'Stellar Service running'
   );
