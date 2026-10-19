@@ -52,15 +52,14 @@
     "zod": "^3.23.0"
   },
   "devDependencies": {
-    "@next/bundle-analyzer": "^14.2.35",
     "@axe-core/playwright": "^4.10.1",
+    "@next/bundle-analyzer": "^14.2.35",
     "@babel/core": "^7.29.0",
     "@playwright/test": "^1.62.1",
     "@babel/preset-env": "^7.29.2",
     "@babel/preset-react": "^7.28.5",
     "@babel/preset-typescript": "^7.28.5",
     "@pact-foundation/pact": "^14.0.0",
-    "@playwright/test": "^1.44.0",
     "@testing-library/dom": "^10.4.2",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",
