@@ -12,6 +12,7 @@ import {
 import { queryKeys } from '@/lib/queryKeys';
 import { useEncounters } from '@/lib/queries/useEncounters';
 import { API_URL } from '@/lib/api';
+import { fetchWithAuth } from '@/lib/auth';
 
 const API = `${API_URL}/api/v1`;
 
@@ -61,6 +62,10 @@ export default function EncountersPage() {
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
   const [filters, setFilters] = useState<Filters>(DEFAULT_FILTERS);
   const [appliedFilters, setAppliedFilters] = useState<Filters>(DEFAULT_FILTERS);
+  const [deleteTarget, setDeleteTarget] = useState<{ id: string; patientName: string } | null>(
+    null
+  );
+  const [deleting, setDeleting] = useState(false);
 
   const { data, isLoading, error } = useEncounters(page, 20, appliedFilters);
   const encounters = data?.data ?? [];
@@ -81,6 +86,30 @@ export default function EncountersPage() {
     setShowForm(false);
     setToast({ message: t('created'), type: 'success' });
     queryClient.invalidateQueries({ queryKey: queryKeys.encounters.list() });
+  };
+
+  const handleDeleteEncounter = async () => {
+    if (!deleteTarget) return;
+    setDeleting(true);
+    try {
+      const res = await fetchWithAuth(`${API}/encounters/${deleteTarget.id}`, {
+        method: 'DELETE',
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.message ?? `Error ${res.status}`);
+      }
+      setToast({ message: 'Encounter removed successfully.', type: 'success' });
+      setDeleteTarget(null);
+      queryClient.invalidateQueries({ queryKey: queryKeys.encounters.list() });
+    } catch (error) {
+      setToast({
+        message: error instanceof Error ? error.message : 'Unable to remove encounter.',
+        type: 'error',
+      });
+    } finally {
+      setDeleting(false);
+    }
   };
 
   const applyFilters = useCallback(() => {
@@ -414,6 +443,27 @@ export default function EncountersPage() {
           </div>
         </>
       )}
+
+      {/* Remove encounter confirmation */}
+      <ConfirmDialog
+        open={Boolean(deleteTarget)}
+        onClose={() => {
+          if (!deleting) setDeleteTarget(null);
+        }}
+        onConfirm={handleDeleteEncounter}
+        title="Remove encounter"
+        confirmLabel="Remove encounter"
+        cancelLabel="Cancel"
+        loading={deleting}
+        message={
+          deleteTarget ? (
+            <>
+              You are about to remove the encounter for <strong>{deleteTarget.patientName}</strong>.
+              This will cancel the encounter and mark it as inactive. This action cannot be undone.
+            </>
+          ) : null
+        }
+      />
     </main>
   );
 }

@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { fetchWithAuth } from '@/lib/auth';
 import { API_V1 } from '@/lib/api';
+import { ConfirmDialog } from '@/components/ui';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui';
 import { WaitlistPanel } from '@/components/appointments/WaitlistPanel';
 import { Skeleton } from '@/components/ui/Skeleton';
@@ -101,6 +102,7 @@ export default function AppointmentsClient({ labels }: { labels: Labels }) {
   const [rescheduleTarget, setRescheduleTarget] = useState<Appointment | null>(null);
   const [rescheduleDate, setRescheduleDate] = useState('');
   const [cancelingId, setCancelingId] = useState<string | null>(null);
+  const [cancelTarget, setCancelTarget] = useState<Appointment | null>(null);
   const [view, setView] = useState<'calendar' | 'waitlist'>('calendar');
 
   // Deep link: /appointments?tab=waitlist
@@ -746,7 +748,7 @@ export default function AppointmentsClient({ labels }: { labels: Labels }) {
                                 >
                                   <button
                                     type="button"
-                                    onClick={() => cancelAppointment(appt._id)}
+                                    onClick={() => setCancelTarget(appt)}
                                     disabled={cancelingId === appt._id}
                                     style={{
                                       borderRadius: 8,
@@ -846,6 +848,30 @@ export default function AppointmentsClient({ labels }: { labels: Labels }) {
           )}
         </TabsContent>
       </Tabs>
+      <ConfirmDialog
+        open={Boolean(cancelTarget)}
+        onClose={() => {
+          if (!cancelingId) setCancelTarget(null);
+        }}
+        onConfirm={async () => {
+          if (!cancelTarget) return;
+          await cancelAppointment(cancelTarget._id);
+          setCancelTarget(null);
+        }}
+        title="Cancel appointment"
+        confirmLabel="Cancel appointment"
+        cancelLabel="Keep appointment"
+        loading={cancelingId !== null}
+        message={
+          cancelTarget ? (
+            <>
+              Are you sure you want to cancel this <strong>{cancelTarget.type}</strong> appointment
+              scheduled for <strong>{new Date(cancelTarget.scheduledAt).toLocaleString()}</strong>?
+              The patient will be notified.
+            </>
+          ) : null
+        }
+      />
     </main>
   );
 }

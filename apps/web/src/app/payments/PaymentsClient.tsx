@@ -147,6 +147,19 @@ export default function PaymentsClient() {
     queryClient.invalidateQueries({ queryKey: queryKeys.payments.list() });
   };
 
+  const handleVoid = async (paymentId: string) => {
+    const res = await fetchWithAuth(`${API}/payments/${paymentId}/cancel`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error(body.message ?? `Error ${res.status}`);
+    }
+    setToast({ message: 'Payment voided.', type: 'success' });
+    queryClient.invalidateQueries({ queryKey: queryKeys.payments.list() });
+  };
+
   const displayPayments = polling ? polledPayments : payments;
 
   return (
@@ -192,7 +205,12 @@ export default function PaymentsClient() {
 
       {!isLoading && !error && (
         <SectionErrorBoundary name="payment panel">
-          <PaymentTable payments={displayPayments} network={NETWORK} onConfirm={handleConfirm} />
+          <PaymentTable
+            payments={displayPayments}
+            network={NETWORK}
+            onConfirm={handleConfirm}
+            onVoid={handleVoid}
+          />
         </SectionErrorBoundary>
       )}
       <Tabs value={tab} onValueChange={changeTab}>
