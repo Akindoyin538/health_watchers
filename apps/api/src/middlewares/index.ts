@@ -62,6 +62,15 @@ export { errorHandler, errorMiddleware } from './error.middleware';
 // Async handler wrapper
 export { asyncHandler } from './async.handler';
 
+// Response optimization
+export { optimizeResponsePayload } from './response-optimization.middleware';
+
+// Lazy loading
+export { parseLazyLoadQuery, attachLazyLoadQuery } from './lazy-load.middleware';
+
+// Auth barrel (legacy re-exports for backwards compatibility)
+export { protect, authorize } from './auth-barrel';
+
 // Other
 export { cacheResponse } from './cache.middleware';
 export { correlationMiddleware } from './correlation.middleware';
