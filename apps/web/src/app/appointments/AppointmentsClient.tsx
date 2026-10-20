@@ -1,12 +1,16 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { fetchWithAuth } from '@/lib/auth';
-import { API_V1 } from '@/lib/api';
-import { ConfirmDialog } from '@/components/ui';
+import { useState, useMemo } from 'react';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui';
-import { WaitlistPanel } from '@/components/appointments/WaitlistPanel';
+import { ConfirmDialog } from '@/components/ui';
 import { Skeleton } from '@/components/ui/Skeleton';
+import { WaitlistPanel } from '@/components/appointments/WaitlistPanel';
+import {
+  useAppointments,
+  useCreateAppointment,
+  useRescheduleAppointment,
+  useCancelAppointment,
+} from '@/hooks/useAppointments';
 
 interface Appointment {
   _id: string;
@@ -82,8 +86,6 @@ function formatTime(datetime: string, hour12 = true) {
 }
 
 export default function AppointmentsClient({ labels }: { labels: Labels }) {
-  const [appointments, setAppointments] = useState<Appointment[]>([]);
-  const [loading, setLoading] = useState(true);
   const [anchor, setAnchor] = useState(new Date());
   const [doctorFilter, setDoctorFilter] = useState('');
   const [showForm, setShowForm] = useState(false);
@@ -97,51 +99,44 @@ export default function AppointmentsClient({ labels }: { labels: Labels }) {
     chiefComplaint: '',
   });
   const [confirmation, setConfirmation] = useState<Appointment | null>(null);
-  const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [rescheduleTarget, setRescheduleTarget] = useState<Appointment | null>(null);
   const [rescheduleDate, setRescheduleDate] = useState('');
-  const [cancelingId, setCancelingId] = useState<string | null>(null);
   const [cancelTarget, setCancelTarget] = useState<Appointment | null>(null);
   const [view, setView] = useState<'calendar' | 'waitlist'>('calendar');
-
-  // Deep link: /appointments?tab=waitlist
-  useEffect(() => {
-    if (new URLSearchParams(window.location.search).get('tab') === 'waitlist') setView('waitlist');
-  }, []);
-
-  const changeView = (next: string) => {
-    const tab = next === 'waitlist' ? 'waitlist' : 'calendar';
-    setView(tab);
-    const url = new URL(window.location.href);
-    if (tab === 'waitlist') url.searchParams.set('tab', 'waitlist');
-    else url.searchParams.delete('tab');
-    window.history.replaceState(null, '', url);
-  };
 
   const weekDays = getWeekDays(anchor);
   const dateFrom = weekDays[0].toISOString();
   const dateTo = weekDays[6].toISOString();
 
-  useEffect(() => {
-    const fetchAppointments = async () => {
-      setLoading(true);
-      try {
-        const params = new URLSearchParams({ dateFrom, dateTo, limit: '200' });
-        if (doctorFilter) params.set('doctorId', doctorFilter);
-        const res = await fetchWithAuth(`${API_V1}/appointments?${params}`);
-        if (!res.ok) throw new Error(`Failed to load appointments (${res.status})`);
-        const data = await res.json();
-        setAppointments(data.data ?? []);
-      } catch (error) {
-        setErrorMessage(error instanceof Error ? error.message : 'Failed to load appointments');
-      } finally {
-        setLoading(false);
-      }
-    };
+  // ── React Query hooks ─────────────────────────────────────────────────────
+  const { data: appointments = [], isLoading } = useAppointments(
+    dateFrom,
+    dateTo,
+    doctorFilter || undefined,
+  );
+  const createMutation = useCreateAppointment();
+  const rescheduleMutation = useRescheduleAppointment();
+  const cancelMutation = useCancelAppointment();
 
-    fetchAppointments();
-  }, [dateFrom, dateTo, doctorFilter]);
+  // Deep link: /appointments?tab=waitlist
+  useMemo(() => {
+    if (typeof window !== 'undefined' &&
+      new URLSearchParams(window.location.search).get('tab') === 'waitlist'
+    )
+      setView('waitlist');
+  }, []);
+
+  const changeView = (next: string) => {
+    const tab = next === 'waitlist' ? 'waitlist' : 'calendar';
+    setView(tab);
+    if (typeof window !== 'undefined') {
+      const url = new URL(window.location.href);
+      if (tab === 'waitlist') url.searchParams.set('tab', 'waitlist');
+      else url.searchParams.delete('tab');
+      window.history.replaceState(null, '', url);
+    }
+  };
 
   const doctors = Array.from(new Set(appointments.map((a) => a.doctorId))).sort();
 
@@ -152,7 +147,6 @@ export default function AppointmentsClient({ labels }: { labels: Labels }) {
   };
 
   const createAppointment = async () => {
-    setStatusMessage(null);
     setErrorMessage(null);
 
     if (!draft.patientId.trim() || !draft.doctorId.trim() || !draft.scheduledAt) {
@@ -161,22 +155,8 @@ export default function AppointmentsClient({ labels }: { labels: Labels }) {
     }
 
     try {
-      const res = await fetchWithAuth(`${API_V1}/appointments`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(draft),
-      });
-
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        throw new Error(data.message || `Failed to create appointment (${res.status})`);
-      }
-
-      const data = await res.json();
-      const appointment: Appointment = data.data ?? data;
-      setAppointments((prev) => [appointment, ...prev]);
+      const appointment = await createMutation.mutateAsync(draft);
       setConfirmation(appointment);
-      setStatusMessage('Appointment created successfully.');
       setShowForm(false);
       setDraft({
         patientId: '',
@@ -193,44 +173,21 @@ export default function AppointmentsClient({ labels }: { labels: Labels }) {
   };
 
   const cancelAppointment = async (id: string) => {
-    setCancelingId(id);
     try {
-      const res = await fetchWithAuth(`${API_V1}/appointments/${encodeURIComponent(id)}/cancel`, {
-        method: 'PATCH',
-      });
-      if (!res.ok) throw new Error(`Failed to cancel (${res.status})`);
-      setAppointments((prev) =>
-        prev.map((appt) => (appt._id === id ? { ...appt, status: 'cancelled' } : appt))
-      );
-      setStatusMessage('Appointment cancelled.');
+      await cancelMutation.mutateAsync(id);
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : 'Unable to cancel appointment');
-    } finally {
-      setCancelingId(null);
     }
   };
 
   const rescheduleAppointment = async (appointment: Appointment, newDate: string) => {
     setErrorMessage(null);
     try {
-      const res = await fetchWithAuth(
-        `${API_V1}/appointments/${encodeURIComponent(appointment._id)}/reschedule`,
-        {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ scheduledAt: newDate }),
-        }
-      );
-      if (!res.ok) throw new Error(`Failed to reschedule (${res.status})`);
-      setAppointments((prev) =>
-        prev.map((appt) =>
-          appt._id === appointment._id
-            ? { ...appt, scheduledAt: newDate, status: 'scheduled' }
-            : appt
-        )
-      );
+      await rescheduleMutation.mutateAsync({
+        appointmentId: appointment._id,
+        scheduledAt: newDate,
+      });
       setRescheduleTarget(null);
-      setStatusMessage('Appointment rescheduled.');
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : 'Unable to reschedule appointment');
     }
@@ -287,7 +244,7 @@ export default function AppointmentsClient({ labels }: { labels: Labels }) {
         </TabsContent>
 
         <TabsContent value="calendar">
-          {statusMessage && (
+          {createMutation.isSuccess && confirmation && (
             <div
               className="bg-emerald-50 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-200"
               style={{
@@ -296,7 +253,7 @@ export default function AppointmentsClient({ labels }: { labels: Labels }) {
                 borderRadius: 8,
               }}
             >
-              {statusMessage}
+              {createMutation.isSuccess ? 'Appointment created successfully.' : ''}
             </div>
           )}
           {errorMessage && (
@@ -604,7 +561,7 @@ export default function AppointmentsClient({ labels }: { labels: Labels }) {
             </div>
           </div>
 
-          {loading ? (
+          {isLoading ? (
             <div role="status" aria-live="polite" aria-label={labels.loading}>
               <div style={{ overflowX: 'auto' }}>
                 <div style={{ minWidth: 720 }}>
@@ -749,7 +706,7 @@ export default function AppointmentsClient({ labels }: { labels: Labels }) {
                                   <button
                                     type="button"
                                     onClick={() => setCancelTarget(appt)}
-                                    disabled={cancelingId === appt._id}
+                                    disabled={cancelMutation.isPending}
                                     style={{
                                       borderRadius: 8,
                                       border: '1px solid rgba(255,255,255,0.7)',
@@ -760,7 +717,7 @@ export default function AppointmentsClient({ labels }: { labels: Labels }) {
                                       cursor: 'pointer',
                                     }}
                                   >
-                                    {cancelingId === appt._id ? 'Cancelling...' : 'Cancel'}
+                                    {cancelMutation.isPending ? 'Cancelling...' : 'Cancel'}
                                   </button>
                                   <button
                                     type="button"
@@ -837,7 +794,7 @@ export default function AppointmentsClient({ labels }: { labels: Labels }) {
             </div>
           )}
 
-          {!loading && appointments.length === 0 && (
+          {!isLoading && appointments.length === 0 && (
             <p
               role="status"
               className="text-slate-500 dark:text-slate-400"
@@ -851,7 +808,7 @@ export default function AppointmentsClient({ labels }: { labels: Labels }) {
       <ConfirmDialog
         open={Boolean(cancelTarget)}
         onClose={() => {
-          if (!cancelingId) setCancelTarget(null);
+          if (!cancelMutation.isPending) setCancelTarget(null);
         }}
         onConfirm={async () => {
           if (!cancelTarget) return;
@@ -861,7 +818,7 @@ export default function AppointmentsClient({ labels }: { labels: Labels }) {
         title="Cancel appointment"
         confirmLabel="Cancel appointment"
         cancelLabel="Keep appointment"
-        loading={cancelingId !== null}
+        loading={cancelMutation.isPending}
         message={
           cancelTarget ? (
             <>
