@@ -30,41 +30,9 @@ import {
   acceptVersionMiddleware,
 } from './middlewares/api-versioning.middleware';
 import { traceIdHeader } from './middlewares/trace-id.middleware';
-import {
-  startPaymentExpirationJob,
-  stopPaymentExpirationJob,
-} from './modules/payments/services/payment-expiration-job';
-import {
-  startReconciliationJob,
-  stopReconciliationJob,
-} from './modules/payments/services/reconciliation-job';
-import {
-  startRiskRecalculationJob,
-  stopRiskRecalculationJob,
-} from './modules/patients/risk-recalculation-job';
-import {
-  startBalanceMonitoringJob,
-  stopBalanceMonitoringJob,
-} from './modules/payments/services/balance-monitoring-job';
-import {
-  startWaitlistExpiryJob,
-  stopWaitlistExpiryJob,
-} from './modules/appointments/waitlist-expiry-job';
-import {
-  startAppointmentReminderJob,
-  stopAppointmentReminderJob,
-} from './modules/appointments/appointment-reminder-job';
-import {
-  startClaimableExpiryNotificationJob,
-  stopClaimableExpiryNotificationJob,
-} from './modules/payments/services/claimable-expiry-notification-job';
-import { startXLMRateJob, stopXLMRateJob } from './modules/payments/services/xlm-rate-job';
-import { startMfaGracePeriodJob, stopMfaGracePeriodJob } from './modules/auth/mfa-grace-period-job';
-import { startRetryWorker, stopRetryWorker } from './modules/webhooks/retry-worker';
-import {
-  startFollowUpReminderJob,
-  stopFollowUpReminderJob,
-} from './modules/encounters/follow-up-reminder-job';
+import { startJobScheduler, stopJobScheduler } from './jobs';
+import { jobsAdminRouter } from './jobs/jobs-admin.controller';
+import { fhirRouter } from './modules/fhir/fhir.router';
 import { warmCache, registerWarmup } from './services/cache.service';
 
 // ── #1071 Cache warm-up registrations ─────────────────────────────────────────
@@ -179,14 +147,26 @@ app.use(
 );
 
 // ── Request ID correlation & propagation ──────────────────────────────────────
-// correlationMiddleware: stamps req.requestId and echoes X-Request-ID header
-app.use(correlationMiddleware);
-// requestIdPropagationMiddleware: stores the ID in AsyncLocalStorage for downstream services
+// requestIdPropagationMiddleware: generates or passes through X-Request-ID, stores it
+// in AsyncLocalStorage for downstream services (stellar-service outbound calls, logs).
 app.use(requestIdPropagationMiddleware);
+// correlationMiddleware: stamps req.requestId, echoes X-Request-ID on the response and
+// correlates it with the active OpenTelemetry trace ID. Runs after propagation so the
+// ID is available to every subsequent middleware, route and error handler.
+app.use(correlationMiddleware);
 
 // ── Body parsing & sanitization ───────────────────────────────────────────────
 app.use(cookieParser());
-app.use(express.json({ limit: standardLimit }));
+// Capture the raw request body so webhook signature verification can compute
+// an HMAC over the exact bytes received (JSON re-serialization is not stable).
+app.use(
+  express.json({
+    limit: standardLimit,
+    verify: (req, _res, buf) => {
+      (req as any).rawBody = buf;
+    },
+  })
+);
 app.use(express.urlencoded({ extended: true, limit: standardLimit }));
 app.use(mongoSanitize({ replaceWith: '_' }));
 app.use(requestAuditMiddleware);
@@ -196,7 +176,11 @@ app.use(csrfMiddleware);
 // ── Content-Type validation (issue #351) ──────────────────────────────────────
 // Reject non-JSON bodies on mutating requests (POST/PUT/PATCH)
 // Bypass for multipart/form-data routes (e.g. CSV import) and CSP violation reports
-const MULTIPART_BYPASS = ['/api/v1/patients/import', '/api/v1/patients/'];
+const MULTIPART_BYPASS = [
+  '/api/v1/patients/import',
+  '/api/v1/patients/',
+  '/api/v1/ai/transcribe-audio',
+];
 app.use((req, res, next) => {
   if (['POST', 'PUT', 'PATCH'].includes(req.method) && req.headers['content-length'] !== '0') {
     if (MULTIPART_BYPASS.some((p) => req.path.startsWith(p))) return next();
@@ -248,6 +232,9 @@ app.use('/api/v2', generalLimiter);
 app.use('/api/v2', responseFilterMiddleware);
 app.use('/api/v2', v2Router);
 
+// ── FHIR R4 read API (#1435) — clinic API keys with patient/*.read scopes ─────
+app.use('/fhir/r4', generalLimiter, fhirRouter);
+
 // ── Stellar federation (public, no auth) ──────────────────────────────────────
 // Mounted at root level to comply with Stellar federation protocol standards
 app.use('/.well-known', federationRouter);
@@ -258,6 +245,7 @@ app.use('/api/v2', migrationStatusRouter);
 app.use('/api/v2', errorAnalyticsRouter);
 app.use('/api/v2', rateLimitConfigRouter);
 app.use('/api/v2', cacheDebugRouter);
+app.use('/api/v2', jobsAdminRouter);
 
 setupSwagger(app);
 
@@ -277,7 +265,10 @@ async function startServer() {
     await migrationManager.initialize();
     logger.info('[migration-manager] Initialized successfully');
   } catch (err) {
-    logger.warn({ err }, '[migration-manager] Initialization failed, continuing without migration tracking');
+    logger.warn(
+      { err },
+      '[migration-manager] Initialization failed, continuing without migration tracking'
+    );
   }
 
   // Seed built-in CDS rules
@@ -296,20 +287,12 @@ async function startServer() {
   initSocket(server);
   logger.info('Socket.IO initialised');
 
-  startPaymentExpirationJob();
-  startReconciliationJob();
-  startRiskRecalculationJob();
-  startBalanceMonitoringJob();
-  startWaitlistExpiryJob();
-  startAppointmentReminderJob();
-  startClaimableExpiryNotificationJob();
-  startXLMRateJob();
+  // #1433 — every background job runs through the distributed BullMQ scheduler:
+  // each schedule executes once per tick across all replicas.
+  startJobScheduler().catch((err) => logger.error({ err }, '[job-registry] failed to start'));
   initializeBackupMetrics().catch((err) =>
     logger.warn({ err }, 'Failed to load initial backup metrics')
   );
-  startMfaGracePeriodJob();
-  startFollowUpReminderJob();
-  startRetryWorker();
 
   // #1071 — Register per-clinic patient-list cache warmup entries now that the
   // DB pool is ready, then warm all registered keys that are currently cold.
@@ -333,9 +316,18 @@ async function startServer() {
             { createdAt: -1 },
             {
               projection: {
-                systemId: 1, firstName: 1, lastName: 1, searchName: 1,
-                dateOfBirth: 1, sex: 1, contactNumber: 1, clinicId: 1,
-                isActive: 1, riskLevel: 1, riskScore: 1, createdAt: 1,
+                systemId: 1,
+                firstName: 1,
+                lastName: 1,
+                searchName: 1,
+                dateOfBirth: 1,
+                sex: 1,
+                contactNumber: 1,
+                clinicId: 1,
+                isActive: 1,
+                riskLevel: 1,
+                riskScore: 1,
+                createdAt: 1,
               },
               hint: 'clinicId_1_isActive_1',
             }
@@ -359,19 +351,7 @@ async function startServer() {
   }, 15_000);
 
   registerGracefulShutdown(server, {
-    stopJobs: [
-      stopPaymentExpirationJob,
-      stopReconciliationJob,
-      stopRiskRecalculationJob,
-      stopBalanceMonitoringJob,
-      stopWaitlistExpiryJob,
-      stopAppointmentReminderJob,
-      stopClaimableExpiryNotificationJob,
-      stopXLMRateJob,
-      stopMfaGracePeriodJob,
-      stopFollowUpReminderJob,
-      stopRetryWorker,
-    ],
+    stopJobs: [stopJobScheduler],
   });
 }
 

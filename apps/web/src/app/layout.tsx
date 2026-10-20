@@ -12,6 +12,8 @@ import { OfflineIndicator } from '@/components/OfflineIndicator';
 import { PWAInit } from '@/components/PWAInit';
 import { SessionTimeoutWarning } from '@/components/SessionTimeoutWarning';
 import { SyncQueueStatus } from '@/components/SyncQueueStatus';
+import { CommandPaletteProvider, CommandPalette } from '@/components/CommandPalette';
+import { GlobalHotkeys } from '@/components/GlobalHotkeys';
 import './globals.css';
 
 const inter = Inter({
@@ -92,19 +94,23 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   return (
     <html lang={locale} className={inter.variable} suppressHydrationWarning>
       <body className="min-h-screen bg-neutral-50 font-sans antialiased dark:bg-neutral-900">
-        <ThemeProvider>
+        <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
           <NextIntlClientProvider locale={locale} messages={messages}>
             <QueryProvider>
               <AuthProvider>
-                <ThemeSync />
-                <PWAInit />
-                <OfflineIndicator />
-                <SessionTimeoutWarning />
-                {children}
-                <div className="fixed right-4 bottom-4 z-40 w-80 max-w-[calc(100vw-2rem)]">
-                  <SyncQueueStatus />
-                </div>
-                <Toaster />
+                <CommandPaletteProvider>
+                  <ThemeSync />
+                  <PWAInit />
+                  <OfflineIndicator />
+                  <SessionTimeoutWarning />
+                  <GlobalHotkeys />
+                  <CommandPalette />
+                  {children}
+                  <div className="fixed right-4 bottom-4 z-40 w-80 max-w-[calc(100vw-2rem)]">
+                    <SyncQueueStatus />
+                  </div>
+                  <Toaster />
+                </CommandPaletteProvider>
               </AuthProvider>
             </QueryProvider>
           </NextIntlClientProvider>
