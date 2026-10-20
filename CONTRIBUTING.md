@@ -319,6 +319,16 @@ The monorepo uses a shared base config (`tsconfig.base.json`) extended by each a
 
 Run `npm run typecheck` locally before pushing. CI fails on any TypeScript error.
 
+#### Strictness progression plan (Issue #1644)
+
+The compiler-level flags above (`strict`, `noUncheckedIndexedAccess`, `exactOptionalPropertyTypes`) are already enabled project-wide. The next increment is type-aware ESLint rules, which catch patterns the compiler alone doesn't flag (unsafe `any` flow, floating promises, unnecessary conditionals):
+
+1. **Done** — `@typescript-eslint`'s type-checked rule set (`flat/recommended-type-checked`) is added in `packages/config/eslint-config`, wired to each package's own `tsconfig.json` via `projectService`.
+2. **Next** — run `npm run lint` across the monorepo, triage the findings per package, and either fix them or, where a rule is too noisy to fix immediately, turn that specific rule down to `warn` (the same gradual-adoption pattern already used for `no-explicit-any` and friends) rather than disabling the whole rule set.
+3. **Later** — once a package's type-checked findings reach zero, flip its remaining `warn`-level type-checked rules to `error` so it can't regress.
+
+Work through packages in dependency order (`packages/` first, then `apps/`) so a fix in a shared package doesn't get re-flagged by every app that depends on it.
+
 Example:
 ```typescript
 // ❌ Bad
