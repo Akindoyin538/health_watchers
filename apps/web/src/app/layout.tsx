@@ -11,6 +11,7 @@ import { ThemeSync } from '@/components/ThemeSync';
 import { OfflineIndicator } from '@/components/OfflineIndicator';
 import { PWAInit } from '@/components/PWAInit';
 import { SessionTimeoutWarning } from '@/components/SessionTimeoutWarning';
+import { SyncQueueStatus } from '@/components/SyncQueueStatus';
 import { CommandPaletteProvider, CommandPalette } from '@/components/CommandPalette';
 import { GlobalHotkeys } from '@/components/GlobalHotkeys';
 import './globals.css';
@@ -117,6 +118,9 @@ export default async function RootLayout({ children }: { children: React.ReactNo
                   <GlobalHotkeys />
                   <CommandPalette />
                   {children}
+                  <div className="fixed right-4 bottom-4 z-40 w-80 max-w-[calc(100vw-2rem)]">
+                    <SyncQueueStatus />
+                  </div>
                   <Toaster />
                 </CommandPaletteProvider>
               </AuthProvider>

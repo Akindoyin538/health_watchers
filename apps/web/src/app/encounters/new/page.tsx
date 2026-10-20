@@ -8,6 +8,7 @@ import { Input, Button, Textarea, Badge } from '@/components/ui';
 import { API_V1 } from '@/lib/api';
 import { formatDate } from '@health-watchers/types';
 import DosageCalculatorModal from '@/components/encounters/DosageCalculatorModal';
+import { OfflineSync, useOnlineStatus } from '@/lib/offline-sync';
 import { useUnsavedChangesGuard } from '@/hooks/useUnsavedChangesGuard';
 import { UnsavedChangesModal } from '@/components/UnsavedChangesModal';
 
@@ -145,6 +146,7 @@ export default function NewEncounterPage() {
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState('');
+  const isOnline = useOnlineStatus();
 
   // AI Suggestions
   const [aiSuggestions, setAiSuggestions] = useState<AiResponse | null>(null);
@@ -401,6 +403,20 @@ export default function NewEncounterPage() {
     setSubmitting(true);
     setSubmitError('');
     try {
+      // ── Offline path ────────────────────────────────────────────────────
+      if (!isOnline) {
+        await OfflineSync.storePendingForm({
+          url: `${API_V1}/encounters`,
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+          label: 'Encounter Creation',
+        });
+        router.push('/encounters?queued=1');
+        return;
+      }
+
+      // ── Online path ─────────────────────────────────────────────────────
       const res = await fetch(`${API_V1}/encounters`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -415,7 +431,19 @@ export default function NewEncounterPage() {
       setIsDirty(false);
       router.push(id ? `/encounters/${id}` : '/encounters');
     } catch (err) {
-      setSubmitError(err instanceof Error ? err.message : 'Submission failed');
+      // Network failure fallback — queue for later
+      try {
+        await OfflineSync.storePendingForm({
+          url: `${API_V1}/encounters`,
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+          label: 'Encounter Creation',
+        });
+        router.push('/encounters?queued=1');
+      } catch {
+        setSubmitError(err instanceof Error ? err.message : 'Submission failed');
+      }
     } finally {
       setSubmitting(false);
     }
@@ -458,18 +486,32 @@ export default function NewEncounterPage() {
         </div>
       )}
 
+      {!isOnline && (
+        <div
+          role="status"
+          className="mb-6 flex items-start gap-3 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-800"
+          data-testid="offline-notice"
+        >
+          <span className="mt-0.5 shrink-0">⚡</span>
+          <p>
+            You are offline. Submitting this form will queue the encounter and sync it automatically
+            when your connection is restored.
+          </p>
+        </div>
+      )}
+
       <div className="space-y-8">
         {/* ── Patient selector ── */}
         <section aria-labelledby="section-patient">
           <h2
             id="section-patient"
-            className="mb-3 text-sm font-semibold uppercase tracking-wide text-neutral-500 dark:text-neutral-400"
+            className="mb-3 text-sm font-semibold tracking-wide text-neutral-500 uppercase dark:text-neutral-400"
           >
             Patient <span className="text-danger-500 dark:text-danger-400">*</span>
           </h2>
 
           {selectedPatient ? (
-            <div className="border-primary-200 dark:border-primary-800 flex items-center justify-between rounded-lg border bg-primary-50 px-4 py-3 dark:bg-primary-950">
+            <div className="border-primary-200 dark:border-primary-800 bg-primary-50 dark:bg-primary-950 flex items-center justify-between rounded-lg border px-4 py-3">
               <div>
                 <p className="font-medium text-neutral-900 dark:text-neutral-100">
                   {selectedPatient.firstName} {selectedPatient.lastName}
@@ -484,7 +526,7 @@ export default function NewEncounterPage() {
                   setSelectedPatient(null);
                   setPatientQuery('');
                 }}
-                className="rounded text-xs text-primary-600 hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 dark:text-primary-400"
+                className="text-primary-600 focus-visible:ring-primary-500 dark:text-primary-400 rounded text-xs hover:underline focus:outline-none focus-visible:ring-2"
               >
                 Change
               </button>
@@ -526,7 +568,7 @@ export default function NewEncounterPage() {
                       key={p._id}
                       role="option"
                       aria-selected={false}
-                      className="cursor-pointer px-4 py-2 text-sm outline-none hover:bg-primary-50 focus:bg-primary-50 dark:hover:bg-primary-950 dark:focus:bg-primary-950"
+                      className="hover:bg-primary-50 focus:bg-primary-50 dark:hover:bg-primary-950 dark:focus:bg-primary-950 cursor-pointer px-4 py-2 text-sm outline-none"
                       tabIndex={0}
                       onClick={() => {
                         setSelectedPatient(p);
@@ -563,7 +605,7 @@ export default function NewEncounterPage() {
         <section aria-labelledby="section-complaint">
           <h2
             id="section-complaint"
-            className="mb-3 text-sm font-semibold uppercase tracking-wide text-neutral-500 dark:text-neutral-400"
+            className="mb-3 text-sm font-semibold tracking-wide text-neutral-500 uppercase dark:text-neutral-400"
           >
             Chief Complaint <span className="text-danger-500 dark:text-danger-400">*</span>
           </h2>
@@ -571,14 +613,17 @@ export default function NewEncounterPage() {
             <Textarea
               label="Chief complaint"
               value={chiefComplaint}
-              onChange={(e) => { setChiefComplaint(e.target.value); setIsDirty(true); }}
+              onChange={(e) => {
+                setChiefComplaint(e.target.value);
+                setIsDirty(true);
+              }}
               maxLength={500}
               rows={3}
               placeholder="Describe the primary reason for this visit…"
               error={errors.chiefComplaint}
             />
             <span
-              className="absolute bottom-2 right-3 text-xs text-neutral-400 dark:text-neutral-500"
+              className="absolute right-3 bottom-2 text-xs text-neutral-400 dark:text-neutral-500"
               aria-live="polite"
             >
               {chiefComplaint.length}/500
@@ -604,7 +649,7 @@ export default function NewEncounterPage() {
             <div className="mt-6 rounded-xl border border-blue-100 bg-blue-50/30 p-5 shadow-sm dark:border-blue-900 dark:bg-blue-950/30">
               <div className="mb-4 flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  <span className="rounded bg-blue-600 px-2 py-0.5 text-[10px] font-bold uppercase tracking-widest text-white">
+                  <span className="rounded bg-blue-600 px-2 py-0.5 text-[10px] font-bold tracking-widest text-white uppercase">
                     Differential Diagnosis AI
                   </span>
                   <Badge
@@ -686,7 +731,7 @@ export default function NewEncounterPage() {
                 ))}
               </div>
 
-              <p className="mt-4 text-[10px] italic text-neutral-400 dark:text-neutral-500">
+              <p className="mt-4 text-[10px] text-neutral-400 italic dark:text-neutral-500">
                 {aiSuggestions.disclaimer}
               </p>
             </div>
@@ -701,11 +746,11 @@ export default function NewEncounterPage() {
             aria-expanded={vitalsOpen}
             aria-controls="vitals-panel"
             onClick={() => setVitalsOpen((v) => !v)}
-            className="flex w-full items-center justify-between rounded-lg border border-neutral-200 bg-neutral-50 px-4 py-3 text-sm font-semibold uppercase tracking-wide text-neutral-500 hover:bg-neutral-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-400 dark:hover:bg-neutral-700"
+            className="focus-visible:ring-primary-500 flex w-full items-center justify-between rounded-lg border border-neutral-200 bg-neutral-50 px-4 py-3 text-sm font-semibold tracking-wide text-neutral-500 uppercase hover:bg-neutral-100 focus:outline-none focus-visible:ring-2 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-400 dark:hover:bg-neutral-700"
           >
             <span>
               Vital Signs{' '}
-              <span className="font-normal normal-case text-neutral-400 dark:text-neutral-500">
+              <span className="font-normal text-neutral-400 normal-case dark:text-neutral-500">
                 (optional)
               </span>
             </span>
@@ -749,7 +794,7 @@ export default function NewEncounterPage() {
                 <button
                   type="button"
                   onClick={() => setTempUnit((u) => (u === 'C' ? 'F' : 'C'))}
-                  className="mb-0.5 rounded border border-neutral-200 px-2 py-2 text-xs text-neutral-600 hover:bg-neutral-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 dark:border-neutral-700 dark:text-neutral-300 dark:hover:bg-neutral-800"
+                  className="focus-visible:ring-primary-500 mb-0.5 rounded border border-neutral-200 px-2 py-2 text-xs text-neutral-600 hover:bg-neutral-50 focus:outline-none focus-visible:ring-2 dark:border-neutral-700 dark:text-neutral-300 dark:hover:bg-neutral-800"
                   aria-label={`Switch to °${tempUnit === 'C' ? 'F' : 'C'}`}
                 >
                   °{tempUnit === 'C' ? 'F' : 'C'}
@@ -771,7 +816,7 @@ export default function NewEncounterPage() {
                 <button
                   type="button"
                   onClick={() => setWeightUnit((u) => (u === 'kg' ? 'lbs' : 'kg'))}
-                  className="mb-0.5 rounded border border-neutral-200 px-2 py-2 text-xs text-neutral-600 hover:bg-neutral-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 dark:border-neutral-700 dark:text-neutral-300 dark:hover:bg-neutral-800"
+                  className="focus-visible:ring-primary-500 mb-0.5 rounded border border-neutral-200 px-2 py-2 text-xs text-neutral-600 hover:bg-neutral-50 focus:outline-none focus-visible:ring-2 dark:border-neutral-700 dark:text-neutral-300 dark:hover:bg-neutral-800"
                   aria-label={`Switch to ${weightUnit === 'kg' ? 'lbs' : 'kg'}`}
                 >
                   {weightUnit === 'kg' ? 'lbs' : 'kg'}
@@ -793,7 +838,7 @@ export default function NewEncounterPage() {
                 <button
                   type="button"
                   onClick={() => setHeightUnit((u) => (u === 'cm' ? 'in' : 'cm'))}
-                  className="mb-0.5 rounded border border-neutral-200 px-2 py-2 text-xs text-neutral-600 hover:bg-neutral-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 dark:border-neutral-700 dark:text-neutral-300 dark:hover:bg-neutral-800"
+                  className="focus-visible:ring-primary-500 mb-0.5 rounded border border-neutral-200 px-2 py-2 text-xs text-neutral-600 hover:bg-neutral-50 focus:outline-none focus-visible:ring-2 dark:border-neutral-700 dark:text-neutral-300 dark:hover:bg-neutral-800"
                   aria-label={`Switch to ${heightUnit === 'cm' ? 'inches' : 'cm'}`}
                 >
                   {heightUnit === 'cm' ? 'in' : 'cm'}
@@ -818,7 +863,7 @@ export default function NewEncounterPage() {
         <section aria-labelledby="section-notes">
           <h2
             id="section-notes"
-            className="mb-3 text-sm font-semibold uppercase tracking-wide text-neutral-500 dark:text-neutral-400"
+            className="mb-3 text-sm font-semibold tracking-wide text-neutral-500 uppercase dark:text-neutral-400"
           >
             Clinical Notes
           </h2>
@@ -826,14 +871,17 @@ export default function NewEncounterPage() {
             <Textarea
               label="Notes"
               value={notes}
-              onChange={(e) => { setNotes(e.target.value); setIsDirty(true); }}
+              onChange={(e) => {
+                setNotes(e.target.value);
+                setIsDirty(true);
+              }}
               rows={6}
               maxLength={10000}
               placeholder="Clinical observations, history, examination findings…"
               error={errors.notes}
             />
             <span
-              className="absolute bottom-2 right-3 text-xs text-neutral-400 dark:text-neutral-500"
+              className="absolute right-3 bottom-2 text-xs text-neutral-400 dark:text-neutral-500"
               aria-live="polite"
             >
               {notes.length}/10,000
@@ -845,10 +893,10 @@ export default function NewEncounterPage() {
         <section aria-labelledby="section-dx">
           <h2
             id="section-dx"
-            className="mb-3 text-sm font-semibold uppercase tracking-wide text-neutral-500 dark:text-neutral-400"
+            className="mb-3 text-sm font-semibold tracking-wide text-neutral-500 uppercase dark:text-neutral-400"
           >
             Diagnosis (ICD-10){' '}
-            <span className="font-normal normal-case text-neutral-400 dark:text-neutral-500">
+            <span className="font-normal text-neutral-400 normal-case dark:text-neutral-500">
               — up to 10
             </span>
           </h2>
@@ -861,7 +909,7 @@ export default function NewEncounterPage() {
                   className="flex items-center justify-between rounded-md border border-neutral-200 bg-neutral-50 px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-800"
                 >
                   <span>
-                    <span className="font-mono font-medium text-primary-700 dark:text-primary-400">
+                    <span className="text-primary-700 dark:text-primary-400 font-mono font-medium">
                       {d.code}
                     </span>
                     <span className="ml-2 text-neutral-700 dark:text-neutral-300">
@@ -877,7 +925,7 @@ export default function NewEncounterPage() {
                     type="button"
                     onClick={() => removeDiagnosis(d.code)}
                     aria-label={`Remove ${d.code}`}
-                    className="hover:text-danger-500 ml-3 rounded text-neutral-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 dark:text-neutral-500"
+                    className="hover:text-danger-500 focus-visible:ring-primary-500 ml-3 rounded text-neutral-400 focus:outline-none focus-visible:ring-2 dark:text-neutral-500"
                   >
                     ✕
                   </button>
@@ -910,12 +958,12 @@ export default function NewEncounterPage() {
                       key={d.code}
                       role="option"
                       aria-selected={diagnoses.some((x) => x.code === d.code)}
-                      className="cursor-pointer px-4 py-2 text-sm outline-none hover:bg-primary-50 focus:bg-primary-50 dark:hover:bg-primary-950 dark:focus:bg-primary-950"
+                      className="hover:bg-primary-50 focus:bg-primary-50 dark:hover:bg-primary-950 dark:focus:bg-primary-950 cursor-pointer px-4 py-2 text-sm outline-none"
                       tabIndex={0}
                       onClick={() => addDiagnosis(d)}
                       onKeyDown={(e) => e.key === 'Enter' && addDiagnosis(d)}
                     >
-                      <span className="font-mono font-medium text-primary-700 dark:text-primary-400">
+                      <span className="text-primary-700 dark:text-primary-400 font-mono font-medium">
                         {d.code}
                       </span>
                       <span className="ml-2 text-neutral-600 dark:text-neutral-300">
@@ -934,10 +982,10 @@ export default function NewEncounterPage() {
           <div className="mb-3 flex items-center justify-between">
             <h2
               id="section-rx"
-              className="text-sm font-semibold uppercase tracking-wide text-neutral-500 dark:text-neutral-400"
+              className="text-sm font-semibold tracking-wide text-neutral-500 uppercase dark:text-neutral-400"
             >
               Prescriptions{' '}
-              <span className="font-normal normal-case text-neutral-400 dark:text-neutral-500">
+              <span className="font-normal text-neutral-400 normal-case dark:text-neutral-500">
                 (optional)
               </span>
             </h2>
@@ -989,7 +1037,7 @@ export default function NewEncounterPage() {
                         type="button"
                         onClick={() => openDosageCalculator(rx.id)}
                         title="AI Dosage Calculator"
-                        className="flex items-center gap-1.5 whitespace-nowrap rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-xs font-medium text-blue-700 hover:bg-blue-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 dark:border-blue-800 dark:bg-blue-950 dark:text-blue-300 dark:hover:bg-blue-900"
+                        className="flex items-center gap-1.5 rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-xs font-medium whitespace-nowrap text-blue-700 hover:bg-blue-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 dark:border-blue-800 dark:bg-blue-950 dark:text-blue-300 dark:hover:bg-blue-900"
                       >
                         <span aria-hidden="true">✨</span> Calculate Dose
                       </button>
@@ -1058,7 +1106,7 @@ export default function NewEncounterPage() {
         <section aria-labelledby="section-followup">
           <h2
             id="section-followup"
-            className="mb-3 text-sm font-semibold uppercase tracking-wide text-neutral-500 dark:text-neutral-400"
+            className="mb-3 text-sm font-semibold tracking-wide text-neutral-500 uppercase dark:text-neutral-400"
           >
             Follow-up Date
           </h2>
@@ -1092,7 +1140,7 @@ export default function NewEncounterPage() {
           </Button>
           <button
             type="button"
-            className="ml-auto rounded text-sm text-neutral-500 hover:text-neutral-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 dark:text-neutral-400 dark:hover:text-neutral-200"
+            className="focus-visible:ring-primary-500 ml-auto rounded text-sm text-neutral-500 hover:text-neutral-800 focus:outline-none focus-visible:ring-2 dark:text-neutral-400 dark:hover:text-neutral-200"
             onClick={() => guardedPush(patientId ? `/patients/${patientId}` : '/encounters')}
           >
             Cancel
@@ -1101,11 +1149,7 @@ export default function NewEncounterPage() {
       </div>
 
       {/* ── Unsaved Changes Modal ── */}
-      <UnsavedChangesModal
-        isOpen={showModal}
-        onConfirm={confirmLeave}
-        onCancel={cancelLeave}
-      />
+      <UnsavedChangesModal isOpen={showModal} onConfirm={confirmLeave} onCancel={cancelLeave} />
 
       {/* ── Dosage Calculator Modal ── */}
       <DosageCalculatorModal
