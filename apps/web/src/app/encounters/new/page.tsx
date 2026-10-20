@@ -8,6 +8,7 @@ import { Input, Button, Textarea, Badge } from '@/components/ui';
 import { API_V1 } from '@/lib/api';
 import { formatDate } from '@health-watchers/types';
 import DosageCalculatorModal from '@/components/encounters/DosageCalculatorModal';
+import { OfflineSync, useOnlineStatus } from '@/lib/offline-sync';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -136,6 +137,7 @@ export default function NewEncounterPage() {
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState('');
+  const isOnline = useOnlineStatus();
 
   // AI Suggestions
   const [aiSuggestions, setAiSuggestions] = useState<AiResponse | null>(null);
@@ -392,6 +394,20 @@ export default function NewEncounterPage() {
     setSubmitting(true);
     setSubmitError('');
     try {
+      // ── Offline path ────────────────────────────────────────────────────
+      if (!isOnline) {
+        await OfflineSync.storePendingForm({
+          url: `${API_V1}/encounters`,
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+          label: 'Encounter Creation',
+        });
+        router.push('/encounters?queued=1');
+        return;
+      }
+
+      // ── Online path ─────────────────────────────────────────────────────
       const res = await fetch(`${API_V1}/encounters`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -405,7 +421,19 @@ export default function NewEncounterPage() {
       const id = data.data?.id ?? data.data?._id;
       router.push(id ? `/encounters/${id}` : '/encounters');
     } catch (err) {
-      setSubmitError(err instanceof Error ? err.message : 'Submission failed');
+      // Network failure fallback — queue for later
+      try {
+        await OfflineSync.storePendingForm({
+          url: `${API_V1}/encounters`,
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+          label: 'Encounter Creation',
+        });
+        router.push('/encounters?queued=1');
+      } catch {
+        setSubmitError(err instanceof Error ? err.message : 'Submission failed');
+      }
     } finally {
       setSubmitting(false);
     }
@@ -443,6 +471,20 @@ export default function NewEncounterPage() {
           className="border-danger-200 bg-danger-50 text-danger-700 mb-6 rounded-md border px-4 py-3 text-sm"
         >
           {submitError}
+        </div>
+      )}
+
+      {!isOnline && (
+        <div
+          role="status"
+          className="mb-6 flex items-start gap-3 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-800"
+          data-testid="offline-notice"
+        >
+          <span className="mt-0.5 shrink-0">⚡</span>
+          <p>
+            You are offline. Submitting this form will queue the encounter and sync it automatically
+            when your connection is restored.
+          </p>
         </div>
       )}
 
