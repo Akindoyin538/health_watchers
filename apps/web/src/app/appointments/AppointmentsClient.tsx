@@ -3,8 +3,10 @@
 import { useState, useEffect } from 'react';
 import { fetchWithAuth } from '@/lib/auth';
 import { API_V1 } from '@/lib/api';
+import { ConfirmDialog } from '@/components/ui';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui';
 import { WaitlistPanel } from '@/components/appointments/WaitlistPanel';
+import { Skeleton } from '@/components/ui/Skeleton';
 
 interface Appointment {
   _id: string;
@@ -100,6 +102,7 @@ export default function AppointmentsClient({ labels }: { labels: Labels }) {
   const [rescheduleTarget, setRescheduleTarget] = useState<Appointment | null>(null);
   const [rescheduleDate, setRescheduleDate] = useState('');
   const [cancelingId, setCancelingId] = useState<string | null>(null);
+  const [cancelTarget, setCancelTarget] = useState<Appointment | null>(null);
   const [view, setView] = useState<'calendar' | 'waitlist'>('calendar');
 
   // Deep link: /appointments?tab=waitlist
@@ -243,7 +246,11 @@ export default function AppointmentsClient({ labels }: { labels: Labels }) {
   };
 
   return (
-    <main id="main-content" style={{ padding: '1.5rem', fontFamily: 'sans-serif' }}>
+    <main
+      id="main-content"
+      className="bg-white text-slate-900 dark:bg-slate-950 dark:text-slate-100"
+      style={{ padding: '1.5rem', fontFamily: 'sans-serif' }}
+    >
       <div
         style={{
           marginBottom: '1rem',
@@ -257,10 +264,9 @@ export default function AppointmentsClient({ labels }: { labels: Labels }) {
         <button
           type="button"
           onClick={() => setShowForm(true)}
+          className="bg-blue-600 text-white hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-400"
           style={{
             padding: '0.5rem 1rem',
-            background: '#2563eb',
-            color: '#fff',
             borderRadius: 6,
             border: 'none',
             cursor: 'pointer',
@@ -283,12 +289,11 @@ export default function AppointmentsClient({ labels }: { labels: Labels }) {
         <TabsContent value="calendar">
           {statusMessage && (
             <div
+              className="bg-emerald-50 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-200"
               style={{
                 marginBottom: '1rem',
                 padding: '0.75rem 1rem',
                 borderRadius: 8,
-                background: '#ecfdf5',
-                color: '#065f46',
               }}
             >
               {statusMessage}
@@ -296,12 +301,11 @@ export default function AppointmentsClient({ labels }: { labels: Labels }) {
           )}
           {errorMessage && (
             <div
+              className="bg-red-50 text-red-700 dark:bg-red-950 dark:text-red-200"
               style={{
                 marginBottom: '1rem',
                 padding: '0.75rem 1rem',
                 borderRadius: 8,
-                background: '#fef2f2',
-                color: '#b91c1c',
               }}
             >
               {errorMessage}
@@ -310,12 +314,12 @@ export default function AppointmentsClient({ labels }: { labels: Labels }) {
 
           {showForm && (
             <div
+              className="border-slate-300 bg-white dark:border-slate-700 dark:bg-slate-900"
               style={{
                 marginBottom: '1.5rem',
                 padding: '1rem',
-                border: '1px solid #d1d5db',
+                border: '1px solid',
                 borderRadius: 12,
-                background: '#ffffff',
               }}
             >
               <div
@@ -329,16 +333,17 @@ export default function AppointmentsClient({ labels }: { labels: Labels }) {
               >
                 <div>
                   <h2 style={{ margin: 0, fontSize: '1.1rem' }}>New appointment</h2>
-                  <p style={{ margin: '0.25rem 0 0', color: '#6b7280' }}>
+                  <p className="text-slate-500 dark:text-slate-400" style={{ margin: '0.25rem 0 0' }}>
                     Choose a patient, clinician, and time slot.
                   </p>
                 </div>
                 <button
                   type="button"
                   onClick={() => setShowForm(false)}
+                  className="border-slate-300 text-slate-700 hover:bg-slate-50 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-800"
                   style={{
                     background: 'transparent',
-                    border: '1px solid #d1d5db',
+                    border: '1px solid',
                     borderRadius: 8,
                     padding: '0.4rem 0.8rem',
                     cursor: 'pointer',
@@ -450,7 +455,8 @@ export default function AppointmentsClient({ labels }: { labels: Labels }) {
                   />
                   <label
                     htmlFor="telemedicine"
-                    style={{ margin: 0, fontSize: '0.95rem', color: '#334155' }}
+                    className="text-slate-700 dark:text-slate-300"
+                    style={{ margin: 0, fontSize: '0.95rem' }}
                   >
                     Telemedicine visit
                   </label>
@@ -483,11 +489,11 @@ export default function AppointmentsClient({ labels }: { labels: Labels }) {
                 <button
                   type="button"
                   onClick={() => setShowForm(false)}
+                  className="border-slate-300 bg-white text-slate-700 hover:bg-slate-50 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
                   style={{
                     padding: '0.7rem 1.2rem',
                     borderRadius: 8,
-                    border: '1px solid #d1d5db',
-                    background: '#fff',
+                    border: '1px solid',
                     cursor: 'pointer',
                   }}
                 >
@@ -496,12 +502,11 @@ export default function AppointmentsClient({ labels }: { labels: Labels }) {
                 <button
                   type="button"
                   onClick={createAppointment}
+                  className="bg-blue-600 text-white hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-400"
                   style={{
                     padding: '0.7rem 1.2rem',
                     borderRadius: 8,
                     border: 'none',
-                    background: '#2563eb',
-                    color: '#fff',
                     cursor: 'pointer',
                   }}
                 >
@@ -513,12 +518,12 @@ export default function AppointmentsClient({ labels }: { labels: Labels }) {
 
           {confirmation && (
             <div
+              className="border-emerald-200 bg-emerald-50 dark:border-emerald-800 dark:bg-emerald-950"
               style={{
                 marginBottom: '1.5rem',
                 padding: '1rem',
-                border: '1px solid #d1fae5',
+                border: '1px solid',
                 borderRadius: 12,
-                background: '#ecfdf5',
               }}
             >
               <div
@@ -530,13 +535,19 @@ export default function AppointmentsClient({ labels }: { labels: Labels }) {
                 }}
               >
                 <div>
-                  <p style={{ margin: '0 0 0.25rem', fontSize: '0.95rem', color: '#065f46' }}>
+                  <p
+                    className="text-emerald-800 dark:text-emerald-200"
+                    style={{ margin: '0 0 0.25rem', fontSize: '0.95rem' }}
+                  >
                     Confirmed appointment
                   </p>
-                  <strong style={{ display: 'block', fontSize: '1rem', color: '#064e3b' }}>
+                  <strong
+                    className="text-emerald-900 dark:text-emerald-100"
+                    style={{ display: 'block', fontSize: '1rem' }}
+                  >
                     {confirmation.type}
                   </strong>
-                  <p style={{ margin: '0.25rem 0 0', color: '#065f46' }}>
+                  <p className="text-emerald-800 dark:text-emerald-200" style={{ margin: '0.25rem 0 0' }}>
                     {confirmation.patientId} with {confirmation.doctorId} at{' '}
                     {formatTime(confirmation.scheduledAt)} on{' '}
                     {new Date(confirmation.scheduledAt).toLocaleDateString()}.
@@ -548,33 +559,45 @@ export default function AppointmentsClient({ labels }: { labels: Labels }) {
 
           <div style={{ marginBottom: '1rem', display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
             <div
+              className="border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-900"
               style={{
                 flex: '1 1 220px',
                 padding: '1rem',
                 borderRadius: 12,
-                background: '#f8fafc',
-                border: '1px solid #e2e8f0',
+                border: '1px solid',
               }}
             >
-              <p style={{ margin: 0, color: '#64748b', fontSize: '0.85rem' }}>Total appointments</p>
               <p
-                style={{ margin: '0.5rem 0 0', fontSize: '1.4rem', fontWeight: 700, color: '#0f172a' }}
+                className="text-slate-500 dark:text-slate-400"
+                style={{ margin: 0, fontSize: '0.85rem' }}
+              >
+                Total appointments
+              </p>
+              <p
+                className="text-slate-900 dark:text-slate-100"
+                style={{ margin: '0.5rem 0 0', fontSize: '1.4rem', fontWeight: 700 }}
               >
                 {appointments.length}
               </p>
             </div>
             <div
+              className="border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-900"
               style={{
                 flex: '1 1 220px',
                 padding: '1rem',
                 borderRadius: 12,
-                background: '#f8fafc',
-                border: '1px solid #e2e8f0',
+                border: '1px solid',
               }}
             >
-              <p style={{ margin: 0, color: '#64748b', fontSize: '0.85rem' }}>Confirmed</p>
               <p
-                style={{ margin: '0.5rem 0 0', fontSize: '1.4rem', fontWeight: 700, color: '#0f172a' }}
+                className="text-slate-500 dark:text-slate-400"
+                style={{ margin: 0, fontSize: '0.85rem' }}
+              >
+                Confirmed
+              </p>
+              <p
+                className="text-slate-900 dark:text-slate-100"
+                style={{ margin: '0.5rem 0 0', fontSize: '1.4rem', fontWeight: 700 }}
               >
                 {appointments.filter((a) => a.status === 'confirmed').length}
               </p>
@@ -582,9 +605,41 @@ export default function AppointmentsClient({ labels }: { labels: Labels }) {
           </div>
 
           {loading ? (
-            <p role="status" aria-live="polite">
-              {labels.loading}
-            </p>
+            <div role="status" aria-live="polite" aria-label={labels.loading}>
+              <div style={{ overflowX: 'auto' }}>
+                <div style={{ minWidth: 720 }}>
+                  <div
+                    style={{
+                      display: 'grid',
+                      gridTemplateColumns: 'repeat(7, minmax(0, 1fr))',
+                      gap: '0.5rem',
+                      marginBottom: '0.5rem',
+                    }}
+                  >
+                    {weekDays.map((day) => (
+                      <Skeleton key={day.toISOString()} variant="text" height={20} />
+                    ))}
+                  </div>
+                  <div
+                    style={{
+                      display: 'grid',
+                      gridTemplateColumns: 'repeat(7, minmax(0, 1fr))',
+                      gap: '0.5rem',
+                    }}
+                  >
+                    {weekDays.map((day) => (
+                      <div
+                        key={day.toISOString()}
+                        style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}
+                      >
+                        <Skeleton variant="rect" height={72} />
+                        <Skeleton variant="rect" height={72} />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </div>
           ) : (
             <div style={{ overflowX: 'auto' }}>
               <table
@@ -600,11 +655,14 @@ export default function AppointmentsClient({ labels }: { labels: Labels }) {
                         <th
                           key={day.toISOString()}
                           scope="col"
+                          className={
+                            isToday
+                              ? 'border border-slate-200 bg-blue-50 font-bold text-slate-900 dark:border-slate-700 dark:bg-blue-950 dark:text-slate-100'
+                              : 'border border-slate-200 bg-slate-50 font-semibold text-slate-900 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100'
+                          }
                           style={{
                             padding: '0.75rem',
-                            border: '1px solid #e5e7eb',
-                            background: isToday ? '#eff6ff' : '#f9fafb',
-                            fontWeight: isToday ? 700 : 600,
+                            border: '1px solid',
                             fontSize: '0.85rem',
                             textAlign: 'center',
                           }}
@@ -629,15 +687,19 @@ export default function AppointmentsClient({ labels }: { labels: Labels }) {
                         <td
                           key={day.toISOString()}
                           valign="top"
+                          className="border border-slate-200 dark:border-slate-700"
                           style={{
                             padding: '0.75rem',
-                            border: '1px solid #e5e7eb',
+                            border: '1px solid',
                             verticalAlign: 'top',
                             minHeight: 120,
                           }}
                         >
                           {dayAppts.length === 0 ? (
-                            <div style={{ color: '#475569', fontSize: '0.82rem', lineHeight: 1.6 }}>
+                            <div
+                              className="text-slate-600 dark:text-slate-400"
+                              style={{ fontSize: '0.82rem', lineHeight: 1.6 }}
+                            >
                               <strong>Available slots:</strong>
                               {getAvailableTimes(day).length > 0 ? (
                                 <ul style={{ margin: '0.5rem 0 0', paddingLeft: '1rem' }}>
@@ -646,7 +708,10 @@ export default function AppointmentsClient({ labels }: { labels: Labels }) {
                                   ))}
                                 </ul>
                               ) : (
-                                <p style={{ margin: '0.5rem 0 0', color: '#94a3b8' }}>
+                                <p
+                                  className="text-slate-400 dark:text-slate-500"
+                                  style={{ margin: '0.5rem 0 0' }}
+                                >
                                   All slots booked
                                 </p>
                               )}
@@ -683,7 +748,7 @@ export default function AppointmentsClient({ labels }: { labels: Labels }) {
                                 >
                                   <button
                                     type="button"
-                                    onClick={() => cancelAppointment(appt._id)}
+                                    onClick={() => setCancelTarget(appt)}
                                     disabled={cancelingId === appt._id}
                                     style={{
                                       borderRadius: 8,
@@ -730,12 +795,12 @@ export default function AppointmentsClient({ labels }: { labels: Labels }) {
 
           {rescheduleTarget && (
             <div
+              className="border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-900"
               style={{
                 marginTop: '1rem',
                 padding: '1rem',
                 borderRadius: 12,
-                background: '#f8fafc',
-                border: '1px solid #e2e8f0',
+                border: '1px solid',
               }}
             >
               <p style={{ margin: 0, fontWeight: 700 }}>Reschedule appointment</p>
@@ -758,12 +823,11 @@ export default function AppointmentsClient({ labels }: { labels: Labels }) {
                   onClick={() =>
                     rescheduleTarget && rescheduleAppointment(rescheduleTarget, rescheduleDate)
                   }
+                  className="bg-blue-600 text-white hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-400"
                   style={{
                     borderRadius: 8,
                     padding: '0.75rem 1rem',
                     border: 'none',
-                    background: '#2563eb',
-                    color: '#fff',
                     cursor: 'pointer',
                   }}
                 >
@@ -774,12 +838,40 @@ export default function AppointmentsClient({ labels }: { labels: Labels }) {
           )}
 
           {!loading && appointments.length === 0 && (
-            <p role="status" style={{ marginTop: '1rem', color: '#6b7280' }}>
+            <p
+              role="status"
+              className="text-slate-500 dark:text-slate-400"
+              style={{ marginTop: '1rem' }}
+            >
               {labels.empty}
             </p>
           )}
         </TabsContent>
       </Tabs>
+      <ConfirmDialog
+        open={Boolean(cancelTarget)}
+        onClose={() => {
+          if (!cancelingId) setCancelTarget(null);
+        }}
+        onConfirm={async () => {
+          if (!cancelTarget) return;
+          await cancelAppointment(cancelTarget._id);
+          setCancelTarget(null);
+        }}
+        title="Cancel appointment"
+        confirmLabel="Cancel appointment"
+        cancelLabel="Keep appointment"
+        loading={cancelingId !== null}
+        message={
+          cancelTarget ? (
+            <>
+              Are you sure you want to cancel this <strong>{cancelTarget.type}</strong> appointment
+              scheduled for <strong>{new Date(cancelTarget.scheduledAt).toLocaleString()}</strong>?
+              The patient will be notified.
+            </>
+          ) : null
+        }
+      />
     </main>
   );
 }

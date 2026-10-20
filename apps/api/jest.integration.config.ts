@@ -22,6 +22,8 @@ const config: Config = {
   moduleNameMapper: {
     '^@api/(.*)$': `${srcRoot}/$1`,
     '^@/(.*)$': `${srcRoot}/$1`,
+    // Resolve the types workspace package — not symlinked into node_modules in CI.
+    '^@health-watchers/types$': path.resolve(__dirname, '../../packages/types/src/index.ts'),
     // Mock pino-http so tests don't need a real pino logger with .child()
     '^pino-http$': `${srcRoot}/__mocks__/pino-http.ts`,
     // Mock Sentry profiling native binary — not available in test environments

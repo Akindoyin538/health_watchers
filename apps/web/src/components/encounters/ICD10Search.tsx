@@ -294,30 +294,23 @@ export default function ICD10Search({ selected, onChange }: ICD10SearchProps) {
     <div data-icd10-root>
       {/* ── Selected diagnoses ── */}
       {selected.length > 0 && (
-        <ul
-          aria-label="Selected diagnoses"
-          className="mb-2 space-y-1"
-          style={{ listStyle: 'none', padding: 0 }}
-        >
+        <ul className="mb-2 list-none p-0">
           {selected.map((s) => (
             <li
               key={s.code}
-              className="flex items-center gap-2 rounded px-2 py-1 text-sm"
-              style={{ background: '#f0f9ff' }}
+              className="mb-1 flex items-center gap-2 rounded bg-blue-50 px-2 py-1.5 text-sm"
             >
-              <span className="font-mono font-semibold">{s.code}</span>
-              <span className="flex-1 text-neutral-700">{s.description}</span>
+              <span className="font-semibold">{s.code}</span>
+              <span className="flex-1">{s.description}</span>
               <button
                 type="button"
                 onClick={() => togglePrimary(s.code)}
                 title={s.isPrimary ? 'Primary diagnosis' : 'Set as primary'}
-                className="rounded px-1.5 py-0.5 text-xs font-medium"
-                style={{
-                  background: s.isPrimary ? '#2563eb' : '#e5e7eb',
-                  color: s.isPrimary ? '#fff' : '#374151',
-                  border: 'none',
-                  cursor: 'pointer',
-                }}
+                className={`cursor-pointer rounded border-0 px-2 py-0.5 text-xs ${
+                  s.isPrimary
+                    ? 'bg-blue-600 text-white'
+                    : 'bg-neutral-200 text-neutral-700'
+                }`}
               >
                 {s.isPrimary ? '★ Primary' : 'Set primary'}
               </button>
@@ -325,8 +318,7 @@ export default function ICD10Search({ selected, onChange }: ICD10SearchProps) {
                 type="button"
                 onClick={() => removeDiagnosis(s.code)}
                 aria-label={`Remove ${s.code}`}
-                className="font-bold text-red-500 hover:text-red-700"
-                style={{ background: 'none', border: 'none', cursor: 'pointer' }}
+                className="cursor-pointer border-0 bg-transparent font-bold text-red-500"
               >
                 ×
               </button>
@@ -335,7 +327,7 @@ export default function ICD10Search({ selected, onChange }: ICD10SearchProps) {
         </ul>
       )}
 
-      {/* ── Search input ── */}
+      {/* Search input */}
       <div className="relative">
         <input
           ref={inputRef}
@@ -349,159 +341,34 @@ export default function ICD10Search({ selected, onChange }: ICD10SearchProps) {
           onKeyDown={handleInputKeyDown}
           placeholder="Search ICD-10 code or description…"
           aria-label="Search ICD-10 diagnosis codes"
-          aria-expanded={isOpen}
-          aria-haspopup="listbox"
-          aria-controls={isOpen ? `${dropdownId}-list` : undefined}
-          autoComplete="off"
-          className="w-full rounded-md border border-neutral-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+          className="w-full rounded-md border border-neutral-300 px-3 py-2 text-sm"
         />
-        {isLoading && (
-          <span
-            aria-live="polite"
-            className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs text-neutral-400"
-          >
+        {loading && (
+          <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-neutral-500">
             Searching…
           </span>
         )}
       </div>
 
-      {/* ── Dropdown ── */}
-      {isOpen && (
-        <div
-          id={dropdownId}
-          className="mt-1 overflow-hidden rounded-md border border-neutral-200 bg-white shadow-lg dark:border-neutral-700 dark:bg-neutral-800"
-          style={{ zIndex: 50, position: 'relative' }}
+      {/* Dropdown results */}
+      {results.length > 0 && (
+        <ul
+          role="listbox"
+          aria-label="ICD-10 search results"
+          className="mt-1 max-h-60 list-none overflow-y-auto rounded-md border border-neutral-300 bg-white p-0 shadow-md"
         >
-          {/* Tab bar */}
-          <div
-            role="tablist"
-            aria-label="ICD-10 view"
-            className="flex border-b border-neutral-200 dark:border-neutral-700"
-          >
-            {tabs.map((tab) => (
-              <button
-                key={tab}
-                role="tab"
-                id={`${dropdownId}-tab-${tab}`}
-                aria-selected={activeTab === tab}
-                aria-controls={`${dropdownId}-panel-${tab}`}
-                onClick={() => {
-                  setActiveTab(tab);
-                  setFocusedIndex(-1);
-                }}
-                className={[
-                  'flex-1 border-b-2 px-3 py-2 text-xs font-medium capitalize transition-colors focus:outline-none focus-visible:ring-2',
-                  activeTab === tab
-                    ? 'border-primary-500 text-primary-600 dark:text-primary-400'
-                    : 'border-transparent text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-300',
-                ].join(' ')}
-              >
-                {tab === 'search' ? 'Search' : tab === 'favorites' ? '★ Favorites' : '🕒 Recent'}
-              </button>
-            ))}
-          </div>
-
-          {/* Content */}
-          <div
-            role="tabpanel"
-            id={`${dropdownId}-panel-${activeTab}`}
-            aria-labelledby={`${dropdownId}-tab-${activeTab}`}
-          >
-            {/* Hint: no query entered yet on search tab */}
-            {activeTab === 'search' && !debouncedQuery.trim() && (
-              <p className="px-3 py-4 text-center text-xs text-neutral-400">
-                Type a code or description to search (e.g. J06 or "respiratory")
-              </p>
-            )}
-
-            {isEmpty && (
-              <p className="px-3 py-4 text-center text-xs text-neutral-400">
-                {emptyMessage[activeTab]}
-              </p>
-            )}
-
-            {listItems.length > 0 && (
-              <ul
-                ref={listRef}
-                id={`${dropdownId}-list`}
-                role="listbox"
-                aria-label={`ICD-10 ${activeTab} results`}
-                className="max-h-64 overflow-y-auto divide-y divide-neutral-100 dark:divide-neutral-700"
-              >
-                {listItems.map((item, index) => {
-                  const alreadySelected = selected.some((s) => s.code === item.code);
-                  const isFocused = index === focusedIndex;
-
-                  return (
-                    <li
-                      key={item.code}
-                      role="option"
-                      aria-selected={alreadySelected}
-                      tabIndex={isFocused ? 0 : -1}
-                      id={`${dropdownId}-option-${item.code}`}
-                      onClick={() => !alreadySelected && addDiagnosis(item)}
-                      onKeyDown={(e) => handleItemKeyDown(e, item, index)}
-                      className={[
-                        'flex cursor-pointer items-center gap-2 px-3 py-2 text-sm transition-colors',
-                        isFocused
-                          ? 'bg-primary-50 dark:bg-primary-900/30'
-                          : 'hover:bg-neutral-50 dark:hover:bg-neutral-700',
-                        alreadySelected ? 'opacity-50 cursor-default' : '',
-                      ].join(' ')}
-                    >
-                      {/* Star / favorite toggle */}
-                      <button
-                        type="button"
-                        aria-label={
-                          item.isFavorite
-                            ? `Remove ${item.code} from favorites`
-                            : `Add ${item.code} to favorites`
-                        }
-                        aria-pressed={item.isFavorite}
-                        onClick={(e) => toggleFavorite(item, e)}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter' || e.key === ' ') {
-                            e.preventDefault();
-                            toggleFavorite(item, e);
-                          }
-                        }}
-                        disabled={addFavorite.isPending || removeFavorite.isPending}
-                        className={[
-                          'shrink-0 rounded p-0.5 transition-colors focus:outline-none focus-visible:ring-2',
-                          item.isFavorite
-                            ? 'text-yellow-500 hover:text-yellow-600'
-                            : 'text-neutral-300 hover:text-yellow-400',
-                        ].join(' ')}
-                      >
-                        <StarIcon filled={item.isFavorite} />
-                      </button>
-
-                      {/* Code + description */}
-                      <span className="min-w-0 flex-1">
-                        <span className="font-mono font-semibold">{item.code}</span>{' '}
-                        <span className="text-neutral-600 dark:text-neutral-400">
-                          {item.description}
-                        </span>
-                      </span>
-
-                      {/* Already-selected badge */}
-                      {alreadySelected && (
-                        <span className="shrink-0 rounded bg-neutral-100 px-1.5 py-0.5 text-xs text-neutral-500 dark:bg-neutral-700">
-                          Added
-                        </span>
-                      )}
-                    </li>
-                  );
-                })}
-              </ul>
-            )}
-          </div>
-
-          {/* Keyboard hint */}
-          <p className="border-t border-neutral-100 px-3 py-1.5 text-xs text-neutral-400 dark:border-neutral-700">
-            ↑↓ navigate · Enter select · Tab switch tabs · Esc close
-          </p>
-        </div>
+          {results.map((r) => (
+            <li
+              key={r.code}
+              role="option"
+              onClick={() => add(r)}
+              className="cursor-pointer border-b border-neutral-100 px-3 py-2 text-sm hover:bg-blue-50"
+            >
+              <span className="mr-2 font-semibold">{r.code}</span>
+              {r.description}
+            </li>
+          ))}
+        </ul>
       )}
     </div>
   );
